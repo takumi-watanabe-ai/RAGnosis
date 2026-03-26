@@ -5,13 +5,5 @@
     "model_js": "gte-small",
     "dimensions": 384,
     "batch_size": 32
-  },
-  "chunking": {
-    "chunk_size": 512,
-    "chunk_overlap": 50
-  },
-  "search": {
-    "default_match_count": 5,
-    "confidence_threshold": 0.4
   }
 }
