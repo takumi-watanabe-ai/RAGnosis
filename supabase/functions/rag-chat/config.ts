@@ -16,10 +16,9 @@ export const config = {
   llm: {
     url: Deno.env.get('OLLAMA_URL') || 'http://ragnosis_ollama:11434',
     model: Deno.env.get('OLLAMA_MODEL') || 'qwen2.5:3b-instruct',
-    temperature: 0.3,
-    maxTokens: 400,  // Target response length
-    maxTokensSafetyCeiling: 450,  // Hard limit to allow sentence completion
-    stopSequences: ['\n\n\n', 'Question:', 'SOURCES:', '---'],  // Stop at unwanted patterns
+    temperature: 0.1,  // Very low to reduce hallucination
+    maxTokens: 1024,  // 700-800 words max - concise but complete
+    stopSequences: [],
   },
 
   // Database configuration

@@ -55,7 +55,7 @@ Classify queries into these intents:
 - market_intelligence: "top embedding models", "most popular frameworks", "trending tools"
 - implementation: "how to set up", "tutorial for", "guide to"
 - troubleshooting: "fix errors", "why is X failing", "solve problem"
-- comparison: "compare LangChain vs LlamaIndex", "X versus Y"
+- comparison: "compare X vs Y", "similar tools to X", "alternatives to X", "like X", "X versus Y"
 - conceptual: "what is chunking", "explain reranking"
 - invalid: off-topic (weather, sports, non-RAG/ML topics)
 
@@ -100,8 +100,9 @@ REQUIRED JSON STRUCTURE:
 }
 
 VALIDATION RULES:
-- Mark is_valid=false for: gibberish, greetings, non-RAG/ML topics (weather, sports, etc.)
-- For invalid queries, provide helpful suggestions about RAG/ML topics
+- ONLY mark is_valid=false if COMPLETELY off-topic: weather, sports, cooking, entertainment, etc.
+- Even vague/unclear RAG questions should be marked valid (low confidence is OK)
+- If there's ANY possibility it's about RAG/ML/AI, mark it valid
 - Extract ALL relevant entities (frameworks, models, companies, concepts)
 - Set confidence based on query clarity (0.0-1.0)
 
@@ -123,7 +124,10 @@ QUESTION: "Fix chunking errors"
 OUTPUT: {"is_valid": true, "reason": "Valid troubleshooting question", "intent": "troubleshooting", "entities": {"concepts": ["chunking", "errors"]}, "topic": "chunking errors", "answer_mode": "standard", "confidence": 0.85}
 
 QUESTION: "What's the weather today?"
-OUTPUT: {"is_valid": false, "reason": "I specialize in RAG/ML topics. I can't help with weather.", "intent": "invalid", "entities": {}, "topic": "", "answer_mode": "direct", "confidence": 0.0, "suggestions": ["How to improve retrieval accuracy?", "What are the top embedding models?", "Compare LangChain vs LlamaIndex"]}
+OUTPUT: {"is_valid": false, "reason": "This question is about weather, not RAG/ML/AI topics.", "intent": "invalid", "entities": {}, "topic": "", "answer_mode": "direct", "confidence": 0.0}
+
+QUESTION: "Tell me about AI"
+OUTPUT: {"is_valid": true, "reason": "Valid but vague AI question", "intent": "conceptual", "entities": {"concepts": ["AI"]}, "topic": "AI overview", "answer_mode": "standard", "confidence": 0.5}
 
 RESPOND WITH VALID JSON ONLY.`
 }
@@ -210,35 +214,6 @@ function determineDataSource(intent: QueryIntent, entities: ExtractedEntities): 
 }
 
 // ============================================================================
-// Query Enhancement
-// ============================================================================
-
-function enhanceQuery(original: string, intent: QueryIntent, entities: ExtractedEntities): string {
-  let enhanced = original
-
-  // Market intelligence: add ranking context
-  if (intent === 'market_intelligence') {
-    if (!/\b(top|popular|best|trending|downloads|stars)\b/i.test(enhanced)) {
-      enhanced = `${enhanced} by popularity`
-    }
-  }
-
-  // Add entity context if available
-  const allEntities = [
-    ...(entities.frameworks || []),
-    ...(entities.vector_dbs || []),
-    ...(entities.models || []),
-    ...(entities.companies || [])
-  ]
-
-  if (allEntities.length > 0 && enhanced === original) {
-    enhanced = `${enhanced} (${allEntities.join(', ')})`
-  }
-
-  return enhanced !== original ? enhanced : undefined
-}
-
-// ============================================================================
 // Main API
 // ============================================================================
 
@@ -279,9 +254,6 @@ export async function analyzeQuery(query: string): Promise<QueryAnalysis> {
     // Determine data source
     const source = determineDataSource(parsed.intent, parsed.entities || {})
 
-    // Enhance query
-    const enhanced_query = enhanceQuery(query, parsed.intent, parsed.entities || {})
-
     return {
       original: query,
       intent: parsed.intent,
@@ -290,8 +262,7 @@ export async function analyzeQuery(query: string): Promise<QueryAnalysis> {
       entities: parsed.entities || {},
       topic: parsed.topic || '',
       is_valid: true,
-      confidence: parsed.confidence || 0.7,
-      enhanced_query
+      confidence: parsed.confidence || 0.7
     }
 
   } catch (error) {

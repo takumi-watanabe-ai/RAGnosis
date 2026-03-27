@@ -125,6 +125,156 @@ export async function smartSearch(
   preferredSource?: string,
   entities?: SearchEntities
 ): Promise<any[]> {
+
+  // AGENTIC ROUTING: Choose strategy based on query intent
+  console.log(`🎯 Routing strategy: ${preferredSource}`)
+
+  // For market intelligence (top/best/popular), use SQL-first approach
+  if (preferredSource === 'sql_models' || preferredSource === 'sql_repos') {
+    return await sqlFirstSearch(supabase, query, top_k, preferredSource, entities)
+  }
+
+  // For semantic queries (how-to, concepts, troubleshooting), use vector-first
+  return await vectorFirstSearch(supabase, query, top_k)
+}
+
+// SQL-First: Rank by metrics (downloads, stars, etc.)
+async function sqlFirstSearch(
+  supabase: SupabaseClient,
+  query: string,
+  top_k: number,
+  source: string,
+  entities?: SearchEntities
+): Promise<any[]> {
+  console.log(`📊 SQL-first search for ${source}`)
+
+  if (source === 'sql_models') {
+    // Build query dynamically based on extracted entities
+    let dbQuery = supabase.from('hf_models').select('*')
+
+    // Use concepts from entities to filter by category
+    if (entities?.concepts && entities.concepts.length > 0) {
+      const categoryMap: Record<string, string> = {
+        'embedding': 'embedding',
+        'embeddings': 'embedding',
+        'rerank': 'reranking',
+        'reranking': 'reranking',
+        'reranker': 'reranking'
+      }
+
+      for (const concept of entities.concepts) {
+        const category = categoryMap[concept.toLowerCase()]
+        if (category) {
+          dbQuery = dbQuery.eq('rag_category', category)
+          console.log(`🎯 Filtering by category='${category}' from concept='${concept}'`)
+          break
+        }
+      }
+    }
+
+    // Filter by company/author if specified
+    if (entities?.companies && entities.companies.length > 0) {
+      dbQuery = dbQuery.in('author', entities.companies)
+      console.log(`🎯 Filtering by authors: ${entities.companies.join(', ')}`)
+    }
+
+    const { data, error } = await dbQuery
+      .order('snapshot_date', { ascending: false })
+      .order('downloads', { ascending: false })
+      .limit(top_k * 4)  // Get more to deduplicate
+
+    if (error) {
+      console.error(`❌ SQL models search failed:`, error)
+      return []
+    }
+
+    // Deduplicate by model_name, keep latest snapshot
+    const seen = new Map()
+    const deduped = (data || []).filter(m => {
+      if (seen.has(m.model_name)) return false
+      seen.set(m.model_name, true)
+      return true
+    })
+
+    return deduped.slice(0, top_k).map(m => ({
+      id: m.id,
+      name: m.model_name,
+      description: m.description,
+      url: m.url,
+      doc_type: 'hf_model',
+      similarity: 1.0,
+      rerank_score: 1.0,
+      downloads: m.downloads,
+      likes: m.likes,
+      ranking_position: m.ranking_position,
+      author: m.author,
+      rag_category: m.rag_category
+    })).slice(0, top_k)
+  }
+
+  if (source === 'sql_repos') {
+    // Build query dynamically based on extracted entities
+    let dbQuery = supabase.from('github_repos').select('*')
+
+    // Use frameworks/vector_dbs from entities
+    if (entities?.frameworks && entities.frameworks.length > 0) {
+      dbQuery = dbQuery.eq('rag_category', 'rag_framework')
+      console.log(`🎯 Filtering for rag_category='rag_framework'`)
+    } else if (entities?.vector_dbs && entities.vector_dbs.length > 0) {
+      dbQuery = dbQuery.eq('rag_category', 'vector_database')
+      console.log(`🎯 Filtering for rag_category='vector_database'`)
+    }
+
+    // Filter by company/owner if specified
+    if (entities?.companies && entities.companies.length > 0) {
+      dbQuery = dbQuery.in('owner', entities.companies)
+      console.log(`🎯 Filtering by owners: ${entities.companies.join(', ')}`)
+    }
+
+    const { data, error } = await dbQuery
+      .order('snapshot_date', { ascending: false })
+      .order('stars', { ascending: false })
+      .limit(top_k * 4)  // Get more to deduplicate
+
+    if (error) {
+      console.error(`❌ SQL repos search failed:`, error)
+      return []
+    }
+
+    // Deduplicate by repo_name, keep latest snapshot
+    const seen = new Map()
+    const deduped = (data || []).filter(r => {
+      if (seen.has(r.repo_name)) return false
+      seen.set(r.repo_name, true)
+      return true
+    })
+
+    return deduped.slice(0, top_k).map(r => ({
+      id: r.id,
+      name: r.repo_name,
+      description: r.description,
+      url: r.url,
+      doc_type: 'github_repo',
+      similarity: 1.0,
+      rerank_score: 1.0,
+      stars: r.stars,
+      forks: r.forks,
+      owner: r.owner,
+      rag_category: r.rag_category
+    })).slice(0, top_k)
+  }
+
+  return []
+}
+
+// Vector-First: Semantic similarity
+async function vectorFirstSearch(
+  supabase: SupabaseClient,
+  query: string,
+  top_k: number
+): Promise<any[]> {
+  console.log(`🔍 Vector-first search`)
+
   const embedding = await generateEmbedding(query)
 
   const { data, error } = await supabase.rpc('vector_search_all_docs', {

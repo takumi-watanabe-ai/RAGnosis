@@ -2,102 +2,127 @@ import type { EnrichedResult } from '../_shared/types.ts'
 import { config } from './config.ts'
 
 /**
- * Build prompt based on query intent
+ * Build prompt based on query intent - Instruction-based (inspired by finance-agent)
+ * No rigid examples - flexible, adaptive responses
  */
 function buildPrompt(query: string, context: string, intent: string, answerMode: string): string {
-  const completionNote = '\n\nBe concise and complete.'
-  // Market Intelligence: Lists with metrics
+
+  // Market Intelligence: Data-driven insights with metrics
   if (intent === 'market_intelligence') {
     return `${context}
 
 Question: ${query}
 
-List the top items with metrics. Cite sources using their names and URLs from the numbered list above as clickable markdown links.
+You are a RAG/ML market analyst. Answer STRICTLY using ONLY the sources above.
 
-Example:
-The top models include **[Llama 3.1](https://...)** (50M downloads), **[Mistral 7B](https://...)** (20M downloads), and others.
+CRITICAL GROUNDING RULES:
+- Use ONLY information explicitly shown in the SOURCES section above
+- Do NOT use your training knowledge or make assumptions
+- If something is not in SOURCES, do not mention it
+- Every fact MUST come from the provided sources
 
-- **[Llama 3.1](https://...)**: Excellent for instruction following
-- **[Mistral 7B](https://...)**: Fast inference, good quality
+Requirements:
+- RESPECT SOURCE TYPES: If asked about "models", only use sources with Type: HuggingFace Model. If asked about "repos/tools", only use Type: GitHub Repository. Blog articles provide context, not data.
+- ONLY use metrics explicitly shown for each source (HF models: downloads/likes/ranking, GitHub repos: stars/forks)
+- NEVER infer, estimate, or mention metrics not provided - if a metric is missing, don't mention it
+- Include ALL provided metrics with exact numbers from the sources
+- CRITICAL: Every time you reference a source, copy its EXACT link format from SOURCES (includes **[Name](url)**)
+- Use ALL relevant sources of the correct type
+- Be concise but comprehensive - no unnecessary elaboration
 
-Include all relevant items from the sources.${completionNote}
+Structure: Choose narrative, bullets, or table based on what best answers the question.
 
 Answer:`
   }
 
-  // Implementation/How-to: Solutions and steps
+  // Implementation: Practical, actionable guidance
   if (intent === 'implementation') {
     return `${context}
 
 Question: ${query}
 
-Provide actionable steps. Cite sources naturally using their names and URLs from the numbered list above.
+You are a senior RAG engineer providing implementation guidance. Answer STRICTLY using ONLY the sources above.
 
-Example:
-To implement RAG chunking, follow these steps as recommended by **[LangChain Documentation](https://...)** and **[OpenAI Best Practices](https://...)**:
+CRITICAL GROUNDING RULES:
+- Use ONLY information explicitly shown in the SOURCES section above
+- Do NOT use your training knowledge or make assumptions
+- If something is not in SOURCES, do not mention it
 
-Steps:
-- Start with 512-token chunks aligned to your embedding model
-- Use 20% overlap to preserve context boundaries
-- Test and adjust based on retrieval quality${completionNote}
+Requirements:
+- Include specific parameters, configurations, and technical details from sources
+- CRITICAL: Every time you reference a source, copy its EXACT link format from SOURCES (includes **[Name](url)**)
+- Explain what to do AND why it works
+- Cover alternatives and trade-offs if sources mention them
+- Be concise - focus on actionable information
 
 Answer:`
   }
 
-  // Troubleshooting: Problem → Solution
+  // Troubleshooting: Diagnose → Solve
   if (intent === 'troubleshooting') {
     return `${context}
 
 Question: ${query}
 
-Explain the issue and provide solutions. Cite sources naturally using their names and URLs from the numbered list above.
+You are a RAG expert helping solve a problem. Answer STRICTLY using ONLY the sources above.
 
-Example:
-The issue occurs when chunk sizes are improperly configured, as highlighted by **[Chunking Best Practices](https://...)** and **[RAG Pipeline Guide](https://...)**.
+CRITICAL GROUNDING RULES:
+- Use ONLY information explicitly shown in the SOURCES section above
+- Do NOT use your training knowledge or make assumptions
+- If something is not in SOURCES, do not mention it
 
-Solutions:
-- **[Chunking Best Practices](https://...)** recommends adjusting chunk size based on your embedding model
-- **[RAG Pipeline Guide](https://...)** suggests using 20% overlap between chunks
-- Additional recommendations${completionNote}
+Requirements:
+- Explain root causes and symptoms
+- Provide ALL solutions from sources with specific parameters and configurations
+- CRITICAL: Every time you reference a source, copy its EXACT link format from SOURCES (includes **[Name](url)**)
+- Indicate which solutions work best for which scenarios
+- Include prevention best practices
+- Be concise - prioritize actionable solutions
 
 Answer:`
   }
 
-  // Comparison: Side-by-side
+  // Comparison: Side-by-side analysis
   if (intent === 'comparison') {
     return `${context}
 
 Question: ${query}
 
-Compare options from the sources. Cite naturally using their names and URLs from the numbered list above.
+You are comparing RAG tools/approaches. Answer STRICTLY using ONLY the sources above.
 
-Example:
-**[Character-based Splitting](https://...)**: Simple, fast, works for most text
-**[Recursive Splitting](https://...)**: Preserves structure, better for code
-**[Semantic Chunking](https://...)**: Context-aware, slower but higher quality
+CRITICAL GROUNDING RULES:
+- Use ONLY information explicitly shown in the SOURCES section above
+- Do NOT use your training knowledge or make assumptions
+- If something is not in SOURCES, do not mention it
 
-Trade-offs:
-- Character-based is fastest but may split mid-sentence
-- Recursive preserves hierarchy but requires more configuration
-- Semantic gives best quality but has higher latency${completionNote}
+Requirements:
+- Compare ALL items with features, performance, use cases, and metrics from sources
+- CRITICAL: Every time you reference a source, copy its EXACT link format from SOURCES (includes **[Name](url)**)
+- Use markdown table for 3+ items, otherwise use clear sections
+- Provide "Use X if..." decision guidance
+- Be concise - focus on key differentiators
 
 Answer:`
   }
 
-  // Conceptual/Default: Explanation
+  // Conceptual/Default: Deep explanation
   return `${context}
 
 Question: ${query}
 
-Explain the concept clearly. Cite sources naturally using their names and URLs from the numbered list above.
+You are explaining a RAG/ML concept. Answer STRICTLY using ONLY the sources above.
 
-Example:
-Chunking in RAG refers to breaking documents into smaller segments for efficient retrieval, as explained by **[RAG Fundamentals](https://...)** and **[Vector Database Guide](https://...)**.
+CRITICAL GROUNDING RULES:
+- Use ONLY information explicitly shown in the SOURCES section above
+- Do NOT use your training knowledge or make assumptions
+- If something is not in SOURCES, do not mention it
 
-Key points:
-- Chunk size affects retrieval precision and context preservation
-- Overlap between chunks helps maintain continuity
-- Different strategies work better for different content types${completionNote}
+Requirements:
+- Answer directly covering what, why, and how from ALL sources
+- CRITICAL: Every time you reference a source, copy its EXACT link format from SOURCES (includes **[Name](url)**)
+- Include definitions, mechanisms, use cases, and trade-offs
+- Synthesize across sources - show different perspectives
+- Be concise yet thorough - focus on understanding, not elaboration
 
 Answer:`
 }
@@ -120,12 +145,15 @@ export async function generateAnswer(
     // Clean up chunk markers like "(part 3/6)" from titles
     const cleanName = item.name.replace(/\s*\(part\s+\d+\/\d+\)\s*$/i, '').trim()
 
-    // Include relevance score in title for blog articles
+    // Format source name as markdown link from the start
+    const sourceLink = `**[${cleanName}](${item.url})**`
+
+    // Include relevance score for blog articles
     if (item.doc_type === 'blog_article' && (item as any).similarity) {
       const relevanceScore = ((item as any).similarity * 100).toFixed(1)
-      context += `\n[${num}] ${cleanName} [Relevance: ${relevanceScore}%]\n`
+      context += `\n[${num}] ${sourceLink} [Relevance: ${relevanceScore}%]\n`
     } else {
-      context += `\n[${num}] ${cleanName}\n`
+      context += `\n[${num}] ${sourceLink}\n`
     }
 
     // Handle different doc types
@@ -170,8 +198,6 @@ export async function generateAnswer(
     if (item.ranking_position) {
       context += `   Ranking: #${item.ranking_position}\n`
     }
-
-    context += `   URL: ${item.url}\n`
   })
 
   // Build intent-specific prompt

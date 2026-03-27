@@ -17,6 +17,34 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': config.cors.allowHeaders,
 }
 
+/**
+ * Format market intelligence results directly (no LLM to prevent hallucination)
+ */
+function formatMarketIntelligence(query: string, results: any[]): string {
+  const isModelQuery = results[0]?.doc_type === 'hf_model'
+
+  let answer = ''
+
+  results.forEach((item, i) => {
+    const num = i + 1
+    answer += `\n${num}. **[${item.name}](${item.url})**\n`
+
+    if (isModelQuery) {
+      if (item.downloads) answer += `   - Downloads: ${item.downloads.toLocaleString()}\n`
+      if (item.likes) answer += `   - Likes: ${item.likes.toLocaleString()}\n`
+      if (item.ranking_position) answer += `   - Ranking: #${item.ranking_position}\n`
+      if (item.author) answer += `   - Author: ${item.author}\n`
+    } else {
+      if (item.stars) answer += `   - Stars: ${item.stars.toLocaleString()}\n`
+      if (item.forks) answer += `   - Forks: ${item.forks.toLocaleString()}\n`
+      if (item.owner) answer += `   - Owner: ${item.owner}\n`
+      if (item.language) answer += `   - Language: ${item.language}\n`
+    }
+  })
+
+  return answer.trim()
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -54,23 +82,27 @@ serve(async (req) => {
       )
     }
 
-    // Use enhanced query if available, otherwise original
-    const searchQuery = analysis.enhanced_query || query
-
-    // Smart routing based on analysis (pass entities for SQL searches)
+    // Simple retry: if no results, ask LLM for broader query
+    let searchQuery = query
     let results = await smartSearch(supabase, searchQuery, top_k, analysis.source, analysis.entities)
 
-    // Filter: only pass high-quality results to LLM
-    // For list queries ("top N"), be more lenient
-    const qualityThreshold = 0.15
-    const highQualityResults = results.filter(r => r.rerank_score && r.rerank_score > qualityThreshold)
-
-    // Ensure we have at least 3 results for list queries
-    if (highQualityResults.length >= 3) {
-      results = highQualityResults
-    } else if (highQualityResults.length > 0) {
-      // Keep top results even if below threshold for better coverage
-      results = results.slice(0, Math.max(5, highQualityResults.length))
+    if (results.length === 0) {
+      try {
+        const retryPrompt = `No results for: "${query}". Suggest broader search (2-5 words, no explanation):`
+        const { url: ollamaUrl, model: ollamaModel } = config.llm
+        const res = await fetch(`${ollamaUrl}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: ollamaModel, prompt: retryPrompt, stream: false, options: { temperature: 0.3, num_predict: 50 } })
+        })
+        if (res.ok) {
+          const data = await res.json()
+          searchQuery = data.response?.trim() || query
+          results = await smartSearch(supabase, searchQuery, top_k, 'blog', {})
+        }
+      } catch (error) {
+        console.error('Retry failed:', error)
+      }
     }
 
     if (results.length === 0) {
@@ -85,8 +117,17 @@ serve(async (req) => {
       )
     }
 
-    // Generate answer with intent-specific formatting
-    const answer = await generateAnswer(query, results, analysis.intent, analysis.answer_mode)
+    // For market intelligence: use direct formatting for "top/list" queries, LLM for specific questions
+    let answer: string
+    const isListQuery = /\b(top|best|popular|trending|list)\b/i.test(query)
+
+    if (analysis.intent === 'market_intelligence' && isListQuery && results.length > 0) {
+      // Direct formatting for lists (prevents hallucination)
+      answer = formatMarketIntelligence(query, results)
+    } else {
+      // Use LLM for specific questions (can extract info from descriptions)
+      answer = await generateAnswer(query, results, analysis.intent, analysis.answer_mode)
+    }
 
     // Format sources
     const sources = results.map((r: any, i: number) => ({
