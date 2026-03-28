@@ -1,4 +1,4 @@
-.PHONY: help setup chat scrape-sitemap embed pipeline env-prod env-local env-status
+.PHONY: help setup chat scrape-sitemap embed pipeline env-prod env-local env-status eval-quick eval-full eval
 
 help: ## Show available commands
 	@echo "RAGnosis - Simple Development Commands"
@@ -74,3 +74,44 @@ env-local: ## Switch to local environment (.env.local.backup → .env)
 env-status: ## Show current environment
 	@echo "Current environment (.env):"
 	@grep "SUPABASE_URL" .env 2>/dev/null || echo "❌ No .env file found"
+
+eval-quick: ## Run quick evaluation (10 samples)
+	@echo "🧪 Running quick evaluation (10 samples)..."
+	@echo "⚠️  Make sure edge function is running (make chat)"
+	@echo ""
+	cd evaluation && . ../venv/bin/activate && python3 evaluate_ragnosis.py \
+		--golden_data golden_data/golden_dataset.jsonl \
+		--max_samples 10 \
+		--save_predictions
+	@echo ""
+	@echo "✅ Evaluation complete! Check evaluation/results/ for output"
+
+eval-full: ## Run full evaluation (all 40 golden test cases)
+	@echo "🧪 Running full evaluation (40 test cases)..."
+	@echo "⚠️  Make sure edge function is running (make chat)"
+	@echo "⏱️  This may take 5-10 minutes..."
+	@echo ""
+	cd evaluation && . ../venv/bin/activate && python3 evaluate_ragnosis.py \
+		--golden_data golden_data/golden_dataset.jsonl \
+		--save_predictions
+	@echo ""
+	@echo "✅ Evaluation complete! Check evaluation/results/ for output"
+
+eval: ## Run evaluation (N=samples, SECTION=sql_/blog_/etc, ALL=1 for all)
+	@echo "🧪 Running evaluation..."
+	@echo "⚠️  Make sure edge function is running (make chat)"
+	@echo ""
+	@if [ "$(ALL)" = "1" ]; then \
+		cd evaluation && . ../venv/bin/activate && python3 evaluate_ragnosis.py \
+			--golden_data golden_data/golden_dataset.jsonl \
+			$(if $(SECTION),--question_prefix $(SECTION)) \
+			--save_predictions; \
+	else \
+		cd evaluation && . ../venv/bin/activate && python3 evaluate_ragnosis.py \
+			--golden_data golden_data/golden_dataset.jsonl \
+			--max_samples $(if $(N),$(N),5) \
+			$(if $(SECTION),--question_prefix $(SECTION)) \
+			--save_predictions; \
+	fi
+	@echo ""
+	@echo "✅ Evaluation complete! Check evaluation/results/ for output"

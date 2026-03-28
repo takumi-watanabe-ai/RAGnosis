@@ -57,6 +57,9 @@ logs/
 # Runtime files
 *.pid
 
+# Evaluation results
+evaluation/results/
+
 # Serena
 .serena/
 
