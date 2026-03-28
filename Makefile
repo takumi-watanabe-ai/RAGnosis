@@ -42,6 +42,13 @@ scrape-blogs: ## Scrape blog articles from sitemaps
 	@echo "✅ Blog scraping complete!"
 	@echo "💡 Next: Run 'make embed' to create embeddings"
 
+scrape-trends: ## Scrape Google Trends data (monthly update)
+	@echo "📈 Scraping Google Trends data..."
+	@echo ""
+	python src/data_collection/trends_pipeline.py
+	@echo ""
+	@echo "✅ Google Trends scraping complete!"
+
 embed: ## Create vector embeddings for all new data
 	@echo "🧮 Creating vector embeddings..."
 	@echo "📦 Loading sentence-transformer model (takes ~30 seconds)..."
@@ -50,13 +57,14 @@ embed: ## Create vector embeddings for all new data
 	@echo ""
 	@echo "✅ Embeddings complete!"
 
-pipeline: ## Fetch market data (HF/GitHub/Trends) - run 'make embed' after
-	@echo "🚀 Fetching market data..."
+pipeline: ## Fetch market data (HF/GitHub) - run 'make embed' after
+	@echo "🚀 Fetching market data (HuggingFace + GitHub)..."
 	@echo ""
 	python src/data_collection/pipeline.py
 	@echo ""
 	@echo "✅ Market data collected!"
 	@echo "💡 Next: Run 'make embed' to create embeddings"
+	@echo "💡 Tip: Run 'make scrape-trends' to also update Google Trends (monthly)"
 
 env-prod: ## Switch to production environment (.env.prod → .env)
 	@if [ ! -f .env.prod ]; then echo "❌ .env.prod not found!"; exit 1; fi
