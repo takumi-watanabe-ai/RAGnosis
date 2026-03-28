@@ -1,6 +1,7 @@
 """
-Simple RAG data pipeline - fetches HF/GitHub/Trends and inserts to SQL.
-Note: Run 'make embed' separately to create vector embeddings.
+Daily RAG data pipeline - fetches HuggingFace models and GitHub repos.
+Note: Google Trends updates monthly via separate workflow.
+Run 'make embed' separately to create vector embeddings.
 """
 
 import logging
@@ -11,7 +12,6 @@ from supabase import create_client
 
 from hf_fetcher import HFModelFetcher
 from github_fetcher import GitHubFetcher
-from trends_fetcher import GoogleTrendsFetcher
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -107,50 +107,17 @@ def main():
         logger.info(f"   ✅ Inserted {len(rows)} repos")
 
     # ========================================
-    # STEP 3: Fetch Google Trends
-    # ========================================
-    logger.info("\n📥 STEP 3: Fetching Google Trends...")
-    trends = []
-    try:
-        trends_fetcher = GoogleTrendsFetcher()
-        trends = trends_fetcher.fetch_trends()
-        logger.info(f"   Found {len(trends)} trend keywords")
-
-        if trends:
-            rows = [
-                {
-                    "id": t.id,
-                    "snapshot_date": snapshot_date,
-                    "keyword": t.keyword,
-                    "category": t.category,
-                    "geo": t.geo,
-                    "timeframe": t.timeframe,
-                    "current_interest": t.current_interest,
-                    "avg_interest": t.avg_interest,
-                    "peak_interest": t.peak_interest,
-                    "trend_direction": t.trend_direction,
-                    "time_series": t.time_series,
-                    "related_queries": t.related_queries,
-                }
-                for t in trends
-            ]
-            supabase.table("google_trends").upsert(rows).execute()
-            logger.info(f"   ✅ Inserted {len(rows)} trends")
-    except Exception as e:
-        logger.warning(f"   ⚠️  Google Trends fetch failed: {e}")
-        logger.warning("   Continuing without trends data...")
-
-    # ========================================
     # Summary
     # ========================================
     logger.info("\n" + "=" * 60)
-    logger.info("✅ DATA COLLECTION COMPLETE")
+    logger.info("✅ DAILY DATA COLLECTION COMPLETE")
     logger.info("=" * 60)
     logger.info(f"   📊 HF Models: {len(rag_models)}")
     logger.info(f"   📊 GitHub Repos: {len(rag_repos)}")
-    logger.info(f"   📊 Google Trends: {len(trends)}")
     logger.info("=" * 60)
-    logger.info("💡 Next: Run 'make embed' to create vector embeddings")
+    logger.info("💡 Next steps:")
+    logger.info("   1. Run 'make embed' to create vector embeddings")
+    logger.info("   2. Google Trends updates monthly via GitHub Actions")
     logger.info("=" * 60 + "\n")
 
 

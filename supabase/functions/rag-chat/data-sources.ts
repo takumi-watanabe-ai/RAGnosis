@@ -289,9 +289,8 @@ async function searchTrends(limit: number): Promise<SearchResult[]> {
   const { data, error } = await supabase
     .from('google_trends')
     .select('*')
-    .order('snapshot_date', { ascending: false })
     .order('current_interest', { ascending: false })
-    .limit(limit * 2)
+    .limit(limit)
 
 
   if (error) {
@@ -303,28 +302,17 @@ async function searchTrends(limit: number): Promise<SearchResult[]> {
     return []
   }
 
-
-  // Deduplicate by keyword, keep latest snapshot
-  const seen = new Map()
-  const deduped = (data || []).filter(t => {
-    if (seen.has(t.keyword)) return false
-    seen.set(t.keyword, true)
-    return true
-  })
-
-
-  return deduped.slice(0, limit).map(t => ({
+  return data.map(t => ({
     id: t.id,
     name: t.keyword,
-    description: `Search interest: ${t.current_interest}% (avg: ${t.avg_interest?.toFixed(1)}%), trending ${t.trend_direction || 'stable'}`,
+    description: `Search interest: ${t.current_interest}% (avg: ${t.avg_interest?.toFixed(1)}%, peak: ${t.peak_interest}%)`,
     url: `https://trends.google.com/trends/explore?q=${encodeURIComponent(t.keyword)}`,
     doc_type: 'google_trend' as const,
     similarity: 1.0,
     rerank_score: 1.0,
     current_interest: t.current_interest,
     avg_interest: t.avg_interest,
-    peak_interest: t.peak_interest,
-    trend_direction: t.trend_direction
+    peak_interest: t.peak_interest
   }))
 }
 

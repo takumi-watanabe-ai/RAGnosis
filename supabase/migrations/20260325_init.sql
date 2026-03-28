@@ -86,25 +86,19 @@ CREATE INDEX IF NOT EXISTS github_repos_ranking_position_idx ON github_repos(ran
 CREATE INDEX IF NOT EXISTS github_repos_is_rag_related_idx ON github_repos(is_rag_related, rag_category);
 CREATE INDEX IF NOT EXISTS github_repos_stars_idx ON github_repos(stars DESC);
 
--- Google Trends (time-series analytics)
+-- Google Trends (time-series analytics) - updated monthly
 CREATE TABLE IF NOT EXISTS google_trends (
-    id TEXT NOT NULL,
-    snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    id TEXT PRIMARY KEY,
     keyword TEXT NOT NULL,
     category TEXT,
-    geo TEXT,
-    timeframe TEXT,
     current_interest INT,
     avg_interest FLOAT,
     peak_interest INT,
-    trend_direction TEXT,
     time_series JSONB,
     related_queries JSONB,
-    scraped_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (id, snapshot_date)
+    scraped_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS google_trends_snapshot_date_idx ON google_trends(snapshot_date);
 CREATE INDEX IF NOT EXISTS google_trends_keyword_idx ON google_trends(keyword);
 
 -- ============================================================================

@@ -34,13 +34,12 @@ chat: ## Run chat interface (starts edge functions + UI)
 	@echo "Starting Streamlit UI..."
 	@streamlit run src/agent/research_agent.py; kill `cat .edge-function.pid` 2>/dev/null || true; rm -f .edge-function.pid
 
-scrape-sitemap: ## Scrape from sitemaps (historical backfill - RECOMMENDED)
-	@echo "🗺️  Scraping blog articles from sitemaps..."
-	@echo "💡 This fetches ALL articles (100s-1000s vs ~15 from RSS)"
+scrape-blogs: ## Scrape blog articles from sitemaps
+	@echo "📰 Scraping blog articles from sitemaps..."
 	@echo ""
-	python -m src.data_collection.content.blog_orchestrator sitemap
+	cd src/data_collection/content && python blog_pipeline.py
 	@echo ""
-	@echo "✅ Sitemap scraping complete!"
+	@echo "✅ Blog scraping complete!"
 	@echo "💡 Next: Run 'make embed' to create embeddings"
 
 embed: ## Create vector embeddings for all new data

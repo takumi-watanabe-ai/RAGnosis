@@ -74,7 +74,6 @@ function formatMarketIntelligence(results: SearchResult[]): string {
     } else if (docType === 'google_trend') {
       if (item.current_interest) answer += `   - Current Interest: ${item.current_interest}%\n`
       if (item.avg_interest) answer += `   - Average Interest: ${item.avg_interest.toFixed(1)}%\n`
-      if (item.trend_direction) answer += `   - Trend: ${item.trend_direction}\n`
       if (item.peak_interest) answer += `   - Peak Interest: ${item.peak_interest}%\n`
     }
   })

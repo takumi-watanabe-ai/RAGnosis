@@ -1,0 +1,46 @@
+name: Monthly Google Trends
+
+on:
+  schedule:
+    # Run at 9:00 AM UTC on the 1st of every month
+    - cron: '0 9 1 * *'
+
+  workflow_dispatch:
+
+jobs:
+  fetch-trends:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch Google Trends data
+        id: trends
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          echo "📈 Running Google Trends pipeline..."
+          python src/data_collection/trends_pipeline.py
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.trends.outcome }}" != "success" ]; then
+            echo "::warning::⚠️  Google Trends fetch failed"
+            echo "This is non-critical - trends data will be updated next month"
+          else
+            echo "✅ Google Trends data updated successfully!"
+          fi

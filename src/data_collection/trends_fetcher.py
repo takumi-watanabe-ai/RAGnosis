@@ -23,16 +23,12 @@ class TrendData:
     """Google Trends data model."""
     id: str
     keyword: str
-    timeframe: str
+    category: str  # "rag_term", "framework", "tool"
+    current_interest: int  # Most recent interest level
     avg_interest: float  # Average search interest (0-100)
     peak_interest: int  # Peak search interest
-    current_interest: int  # Most recent interest level
-    trend_direction: str  # "rising", "falling", "stable"
-    geo: str  # Geographic region
-    category: str  # "rag_term", "framework", "tool"
     time_series: List[Dict]  # [{date: "2024-01", value: 45}, ...]
     related_queries: List[Dict]  # Top related searches
-    source: str = "google_trends"
     scraped_at: str = datetime.now().isoformat()
 
 
@@ -219,18 +215,15 @@ class GoogleTrendsFetcher:
             category = self._get_category(keyword)
 
             # Generate ID
-            trend_id = f"trend_{keyword.replace(' ', '_').lower()}_{geo or 'global'}"
+            trend_id = f"trend_{keyword.replace(' ', '_').lower()}_global"
 
             return TrendData(
                 id=trend_id,
                 keyword=keyword,
-                timeframe=timeframe,
+                category=category,
+                current_interest=current_interest,
                 avg_interest=avg_interest,
                 peak_interest=peak_interest,
-                current_interest=current_interest,
-                trend_direction=trend_direction,
-                geo=geo or "worldwide",
-                category=category,
                 time_series=time_series,
                 related_queries=[]
             )

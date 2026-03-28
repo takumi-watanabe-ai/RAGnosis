@@ -62,7 +62,6 @@ export interface SearchResult {
   current_interest?: number
   avg_interest?: number
   peak_interest?: number
-  trend_direction?: string
   // Blog-specific
   content?: string
 }

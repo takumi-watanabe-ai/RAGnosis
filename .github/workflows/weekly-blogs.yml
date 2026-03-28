@@ -1,0 +1,47 @@
+name: Weekly Blog Scraping
+
+on:
+  schedule:
+    # Run at 10:00 AM UTC every Monday
+    - cron: '0 10 * * 1'
+
+  workflow_dispatch:
+
+jobs:
+  scrape-blogs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Scrape blog articles
+        id: blogs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          echo "📰 Running blog scraping pipeline..."
+          cd src/data_collection/content
+          python blog_pipeline.py
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.blogs.outcome }}" != "success" ]; then
+            echo "::warning::⚠️  Blog scraping failed"
+            echo "This is non-critical - blogs will be scraped next week"
+          else
+            echo "✅ Blog articles scraped successfully!"
+          fi
