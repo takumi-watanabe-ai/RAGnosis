@@ -1,4 +1,4 @@
-.PHONY: help setup chat scrape-sitemap embed pipeline env-prod env-local env-status eval-quick eval-full eval
+.PHONY: help setup chat scrape-sitemap embed pipeline env-prod env-local env-status eval-quick eval-full eval eval-range
 
 help: ## Show available commands
 	@echo "RAGnosis - Simple Development Commands"
@@ -120,5 +120,29 @@ eval: ## Run evaluation (N=samples, SECTION=sql_/blog_/etc, ALL=1 for all)
 			$(if $(SECTION),--question_prefix $(SECTION)) \
 			--save_predictions; \
 	fi
+	@echo ""
+	@echo "✅ Evaluation complete! Check evaluation/results/ for output"
+
+eval-range: ## Run evaluation with offset and count (RANGE=offset:count, e.g., RANGE=10:5)
+	@echo "🧪 Running evaluation with range..."
+	@echo "⚠️  Make sure edge function is running (make chat)"
+	@echo ""
+	@if [ -z "$(RANGE)" ]; then \
+		echo "❌ Error: RANGE parameter required (e.g., make eval-range RANGE=10:5)"; \
+		exit 1; \
+	fi
+	@OFFSET=$$(echo "$(RANGE)" | cut -d':' -f1); \
+	COUNT=$$(echo "$(RANGE)" | cut -d':' -f2); \
+	if [ -z "$$OFFSET" ] || [ -z "$$COUNT" ]; then \
+		echo "❌ Error: Invalid RANGE format. Use offset:count (e.g., 10:5)"; \
+		exit 1; \
+	fi; \
+	echo "📊 Testing questions $$OFFSET to $$((OFFSET + COUNT - 1)) ($$COUNT questions)"; \
+	echo ""; \
+	cd evaluation && . ../venv/bin/activate && python3 evaluate_ragnosis.py \
+		--golden_data golden_data/golden_dataset.jsonl \
+		--offset $$OFFSET \
+		--max_samples $$COUNT \
+		--save_predictions
 	@echo ""
 	@echo "✅ Evaluation complete! Check evaluation/results/ for output"

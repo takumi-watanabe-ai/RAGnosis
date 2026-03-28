@@ -193,21 +193,26 @@ class UnifiedVectorEmbedder:
         self, models: List[Dict], repos: List[Dict], articles: List[Dict], existing_ids: Set[str]
     ) -> List[Dict]:
         """
-        Prepare all documents for embedding, filtering out existing entries.
+        Prepare all documents for embedding.
+        - NEW documents: Create fresh embeddings
+        - EXISTING models/repos: Re-embed if metadata changed (downloads/stars)
+        - EXISTING articles: Skip (don't change)
 
         Returns list of documents with unified schema.
         """
         logger.info("\n🔄 Preparing documents for embedding...")
 
         documents = []
+        updated_count = 0
 
-        # Process models
+        # Process models (always re-embed to get latest metadata)
         for model in models:
             model_id = model["id"]
 
+            # Always process models from latest snapshot (they're small, ~40 total)
+            # This ensures download counts and popularity rankings stay current
             if model_id in existing_ids:
-                logger.debug(f"   Skipping existing model: {model_id}")
-                continue
+                updated_count += 1
 
             doc = {
                 "id": model_id,
@@ -227,13 +232,14 @@ class UnifiedVectorEmbedder:
             }
             documents.append(doc)
 
-        # Process repos
+        # Process repos (always re-embed to get latest metadata)
         for repo in repos:
             repo_id = repo["id"]
 
+            # Always process repos from latest snapshot (they're small, ~20 total)
+            # This ensures star counts and popularity rankings stay current
             if repo_id in existing_ids:
-                logger.debug(f"   Skipping existing repo: {repo_id}")
-                continue
+                updated_count += 1
 
             doc = {
                 "id": repo_id,
@@ -308,12 +314,116 @@ class UnifiedVectorEmbedder:
                     }
                     documents.append(doc)
 
-        logger.info(f"✅ Prepared {len(documents)} NEW documents for embedding")
-        logger.info(
-            f"   (Skipped {len(models) + len(repos) + len(articles) - len(documents)} existing entries)"
-        )
+        new_count = len(documents) - updated_count
+        logger.info(f"✅ Prepared {len(documents)} documents for embedding")
+        logger.info(f"   - New: {new_count}")
+        logger.info(f"   - Updated (metadata refresh): {updated_count}")
+        logger.info(f"   - Skipped articles: {len(articles) - sum(1 for d in documents if d['doc_type'] == 'blog_article')}")
 
         return documents
+
+    def _create_embedding_text(self, doc: Dict) -> str:
+        """
+        Create rich, semantic text for embedding based on document type.
+        Uses natural language descriptions (no numbers, no labels).
+        """
+        doc_type = doc['doc_type']
+
+        if doc_type == 'hf_model':
+            parts = [doc['name']]
+
+            # Add name with slashes replaced for better tokenization
+            # "Supabase/gte-small" → "Supabase gte-small" (keep technical identifiers intact)
+            if '/' in doc['name']:
+                parts.append(doc['name'].replace('/', ' '))
+
+            # Add semantic popularity signal
+            if doc.get('downloads'):
+                downloads = doc['downloads']
+                if downloads > 100_000_000:
+                    parts.append("Extremely popular and widely used model")
+                    parts.append("Most downloaded in its category")
+                elif downloads > 10_000_000:
+                    parts.append("Very popular model")
+                    parts.append("Used in many production systems")
+                elif downloads > 1_000_000:
+                    parts.append("Popular model with active usage")
+
+            # Add semantic category description
+            if doc.get('rag_category') == 'embedding':
+                parts.append("Embedding model for semantic search")
+                parts.append("Converts text to dense vector representations")
+            elif doc.get('rag_category') == 'reranking':
+                parts.append("Reranking model for improving search results")
+                parts.append("Used for cross-encoder reranking")
+
+            # Add semantic task description
+            if doc.get('task'):
+                task = doc['task']
+                if 'feature-extraction' in task or 'sentence-similarity' in task:
+                    parts.append("Sentence embedding and similarity matching")
+                elif 'text-generation' in task:
+                    parts.append("Text generation and language modeling")
+
+            # Add description (already semantic)
+            if doc.get('description'):
+                parts.append(doc['description'])
+
+            return "\n".join(parts)
+
+        elif doc_type == 'github_repo':
+            parts = [doc['name']]
+
+            # Add name with slashes replaced for better tokenization
+            # "langflow-ai/langflow" → "langflow-ai langflow" (keep org names intact)
+            if '/' in doc['name']:
+                parts.append(doc['name'].replace('/', ' '))
+
+            # Add semantic popularity signal
+            if doc.get('stars'):
+                stars = doc['stars']
+                if stars > 100_000:
+                    parts.append("Extremely popular and widely adopted repository")
+                    parts.append("Top open source project")
+                elif stars > 50_000:
+                    parts.append("Highly popular repository")
+                    parts.append("Widely used in production")
+                elif stars > 10_000:
+                    parts.append("Popular repository with active community")
+                elif stars > 1_000:
+                    parts.append("Established repository with good adoption")
+
+            # Add semantic category description
+            if doc.get('rag_category'):
+                category = doc['rag_category']
+                if category == 'rag_tool' or category == 'rag_framework':
+                    parts.append("RAG framework for building AI applications")
+                    parts.append("Provides tools for retrieval-augmented generation")
+                elif category == 'vector_db':
+                    parts.append("Vector database for similarity search")
+                    parts.append("Stores and queries embeddings")
+                elif category == 'agent_framework':
+                    parts.append("Agent framework for autonomous AI systems")
+                    parts.append("Builds AI agents with tools and memory")
+
+            # Add language context (if relevant)
+            if doc.get('language'):
+                lang = doc['language']
+                if lang in ['Python', 'TypeScript', 'JavaScript']:
+                    parts.append(f"{lang} implementation")
+
+            # Add description (already semantic)
+            if doc.get('description'):
+                parts.append(doc['description'])
+
+            return "\n".join(parts)
+
+        else:
+            # For blog articles and other types, use natural format
+            parts = [doc['name']]
+            if doc.get('description'):
+                parts.append(doc['description'])
+            return "\n".join(parts)
 
     def generate_embeddings(self, documents: List[Dict]) -> List[Dict]:
         """Generate embeddings for all documents."""
@@ -323,10 +433,10 @@ class UnifiedVectorEmbedder:
 
         logger.info(f"\n🧮 Generating embeddings for {len(documents)} documents...")
 
-        # Combine name + description for embedding
+        # Create rich text for embedding based on doc type
         texts = []
         for doc in documents:
-            text = f"Name: {doc['name']}\nDescription: {doc['description']}"
+            text = self._create_embedding_text(doc)
             texts.append(text)
 
         # Generate embeddings in batches
@@ -360,9 +470,8 @@ class UnifiedVectorEmbedder:
 
         rows = []
         for doc in documents:
-            # Create preview text
-            description_preview = doc["description"][:300] if doc["description"] else ""
-            preview_text = f"{doc['name']}: {description_preview}" if description_preview else doc["name"]
+            # Create rich text with metadata for search
+            rich_text = self._create_embedding_text(doc)
 
             row = {
                 "id": doc["id"],
@@ -372,7 +481,7 @@ class UnifiedVectorEmbedder:
                 "doc_type": doc["doc_type"],
                 "rag_category": doc.get("rag_category"),
                 "topics": doc.get("topics", []),
-                "text": preview_text,
+                "text": rich_text,
                 "embedding": doc["embedding"],
                 "snapshot_date": doc.get("snapshot_date"),
                 # Metrics
@@ -419,12 +528,14 @@ class UnifiedVectorEmbedder:
         Run the complete unified embedding pipeline.
 
         Workflow:
-        1. Fetch RAG-related models/repos from time-series tables
-        2. Fetch blog articles from source table
-        3. Check existing IDs in documents table
-        4. Filter out duplicates
-        5. Generate embeddings for NEW documents only
-        6. Upsert to unified documents table
+        1. Fetch RAG-related models/repos from time-series tables (latest snapshot)
+        2. Check existing IDs in documents table
+        3. Only fetch blog articles if they don't have embeddings yet
+        4. Generate embeddings for NEW documents only
+        5. Upsert to unified documents table
+
+        Args:
+            snapshot_date: Date to fetch data for (default: today - ensures we only run if data was collected today)
         """
         logger.info("\n" + "=" * 60)
         logger.info("🚀 STARTING UNIFIED VECTOR EMBEDDING PIPELINE")
@@ -432,6 +543,7 @@ class UnifiedVectorEmbedder:
 
         if snapshot_date is None:
             snapshot_date = date.today().isoformat()
+            logger.info(f"📅 Using today's snapshot date: {snapshot_date} (no update if data not collected)")
 
         try:
             # Step 1: Get existing IDs from documents table
@@ -441,7 +553,19 @@ class UnifiedVectorEmbedder:
             logger.info(f"\n📂 STEP 1: Fetching data from source tables (date: {snapshot_date})...")
             models = self.fetch_models_from_sql(snapshot_date)
             repos = self.fetch_repos_from_sql(snapshot_date)
-            articles = self.fetch_articles_from_sql()
+
+            # Check if we need to fetch articles (only if none exist in documents table)
+            articles_exist = any(
+                doc_id.startswith('blog_') or 'chunk' in doc_id
+                for doc_id in existing_ids
+            )
+
+            if articles_exist:
+                logger.info("⏭️  Skipping blog articles (already embedded)")
+                articles = []
+            else:
+                logger.info("📰 Fetching blog articles (first time embedding)")
+                articles = self.fetch_articles_from_sql()
 
             # Step 3: Prepare documents (filter out existing)
             logger.info("\n🔄 STEP 2: Preparing documents...")

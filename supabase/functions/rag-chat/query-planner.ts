@@ -8,209 +8,109 @@ import { config } from './config.ts'
 
 /**
  * Analyze query and create execution plan using hybrid routing
+ * Routes explicit ranking queries to specialized DB functions
+ * Everything else goes to semantic search
  */
 export async function createQueryPlan(query: string, top_k: number = 5): Promise<QueryPlan> {
   const lowerQuery = query.toLowerCase()
 
-  // RULE 1: Explicit ranking queries for models
-  // Pattern: "top/best/most popular/leading" + "models/embeddings/reranking"
+  // ROUTE 1: Explicit "top X embedding/reranking models" → Direct DB ranking
+  // Pattern: "top/best/most popular/show me" + number? + "embedding/reranking" + "models"
   const modelRankingPatterns = [
-    /\b(top|best|most popular|leading|highest)\s+\d*\s*(embedding|reranking|sentence[\s-]?transformer)s?\s+models?\b/,
-    /\b(top|best|most popular)\s+\d*\s*models?\s+(for|by)\s+(embedding|reranking|downloads)/,
-    /\bwhat are the (top|best|most popular)\s+.*models?\b/
+    /\b(top|best|most popular|show me|list)\s+(\d+\s+)?(embedding|reranking|sentence[\s-]?transformer)s?\s+models?\b/,
+    /\b(top|best|most popular)\s+(\d+\s+)?models?\s+(for\s+)?(embedding|reranking)\b/,
+    /\bmost popular embedding model\b/
   ]
 
   for (const pattern of modelRankingPatterns) {
     if (pattern.test(lowerQuery)) {
-      const categories = extractCategories(lowerQuery)
-      console.log(`📋 Rule-based routing: top_models_by_downloads`)
+      console.log(`📋 Route: top_models_by_downloads (explicit model ranking query)`)
       return {
         intent: 'market_intelligence',
         confidence: 0.95,
         is_valid: true,
-        reason: 'Explicit model ranking query detected',
+        reason: 'Explicit model ranking query - using direct DB sort',
         data_sources: [{
           source: 'top_models_by_downloads',
-          params: { categories, limit: top_k }
+          params: { limit: top_k }
         }]
       }
     }
   }
 
-  // RULE 2: Explicit ranking queries for repos/frameworks
-  // Pattern: "top/best/most popular" + "frameworks/repos/libraries/databases"
+  // ROUTE 2: Explicit "top X repos/frameworks" → Direct DB ranking
+  // Pattern: "top/best/most popular/show me" + number? + "repo/framework/library"
   const repoRankingPatterns = [
-    /\b(top|best|most popular|leading)\s+\d*\s*(rag|vector)?\s*(frameworks?|repos?|repositories|libraries|databases?)\b/,
-    /\b(most starred|highest stars?)\s+(rag|vector)?\s*(frameworks?|repos?)\b/
+    /\b(top|best|most popular|show me|list)\s+(\d+\s+)?(rag\s+)?(repos?|repositories|frameworks?|libraries)\b/,
+    /\b(top|best|most popular)\s+(\d+\s+)?github\s+repos?\b/,
+    /\bwhat are the top.*repos?\b/
   ]
 
   for (const pattern of repoRankingPatterns) {
     if (pattern.test(lowerQuery)) {
-      const categories = extractCategories(lowerQuery)
-      console.log(`📋 Rule-based routing: top_repos_by_stars`)
+      console.log(`📋 Route: top_repos_by_stars (explicit repo ranking query)`)
       return {
         intent: 'market_intelligence',
         confidence: 0.95,
         is_valid: true,
-        reason: 'Explicit repo ranking query detected',
+        reason: 'Explicit repo ranking query - using direct DB sort',
         data_sources: [{
           source: 'top_repos_by_stars',
-          params: { categories, limit: top_k }
+          params: { limit: top_k }
         }]
       }
     }
   }
 
-  // RULE 3: Trend queries
-  if (/\b(trends?|trending|popularity over time|interest over time)\b/.test(lowerQuery)) {
-    console.log(`📋 Rule-based routing: search_trends`)
-    return {
-      intent: 'market_intelligence',
-      confidence: 0.9,
-      is_valid: true,
-      reason: 'Trend query detected',
-      data_sources: [{
-        source: 'search_trends',
-        params: { limit: top_k }
-      }]
-    }
+  // ROUTE 3: Everything else → Semantic search (hybrid vector + BM25)
+  // Includes: how-to, comparisons, conceptual questions, specific model queries, etc.
+  const weights = determineWeights(query)
+  console.log(`📋 Route: vector_search_unified (semantic search, weights: ${Math.round(weights.blog * 100)}% blog, ${Math.round(weights.structured * 100)}% structured)`)
+
+  return {
+    intent: 'conceptual',
+    confidence: 1.0,
+    is_valid: true,
+    reason: 'Using unified semantic search with query-adaptive diversity',
+    data_sources: [{
+      source: 'vector_search_unified',
+      params: { query, limit: top_k, weights }
+    }]
   }
-
-  // RULE 4: Informational/implementation queries (semantic search)
-  // Pattern: "how to", "best practices", "guide", "tutorial", "explain", "what is", comparisons
-  const semanticPatterns = [
-    /\b(how to|how do|guide to|tutorial)\b/,
-    /\bbest practices?\b/,
-    /\b(what is|what are|what does|what do|explain|describe)\b/,
-    /\b(which|should I|recommend|suggestion)\b/,
-    /\b(vs|versus|compared to|difference between|compare)\b/,
-    /\b(implement|deploy|set up|configure|integrate|fix|solve|improve|optimize)\b/,
-    /\b(use|uses|using)\b/
-  ]
-
-  for (const pattern of semanticPatterns) {
-    if (pattern.test(lowerQuery)) {
-      console.log(`📋 Rule-based routing: vector_search_unified`)
-      return {
-        intent: 'implementation',
-        confidence: 0.9,
-        is_valid: true,
-        reason: 'Informational/implementation query detected',
-        data_sources: [{
-          source: 'vector_search_unified',
-          params: { query, limit: top_k }
-        }]
-      }
-    }
-  }
-
-  // FALLBACK: Use LLM for ambiguous queries
-  console.log(`📋 LLM-based routing (ambiguous query)`)
-  return await llmBasedRouting(query, top_k)
 }
 
 /**
- * Extract rag_category from query
+ * Determine diversity weights based on query intent
+ * Returns percentage split between blog articles and structured data (models/repos)
+ *
+ * IMPORTANT: Keep weights balanced to avoid forcing low-quality matches.
+ * Stratified sampling will ensure diversity, but shouldn't override relevance too strongly.
  */
-function extractCategories(query: string): string[] | undefined {
-  const categories: string[] = []
-  if (/\bembedd?ing\b/i.test(query)) categories.push('embedding')
-  if (/\brerank(ing)?\b/i.test(query)) categories.push('reranking')
-  if (/\brag[\s-]?tool\b/i.test(query)) categories.push('rag_tool')
-  if (/\bvector[\s-]?db|vector database\b/i.test(query)) categories.push('vector_db')
-  return categories.length > 0 ? categories : undefined
-}
+function determineWeights(query: string): { blog: number; structured: number } {
+  const lowerQuery = query.toLowerCase()
 
-/**
- * LLM-based routing for ambiguous queries
- */
-async function llmBasedRouting(query: string, top_k: number): Promise<QueryPlan> {
-  const prompt = buildPlanningPrompt(query, top_k)
-
-  try {
-    const response = await fetch(`${config.llm.url}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: config.llm.model,
-        prompt,
-        stream: false,
-        options: {
-          temperature: config.llm.planning.temperature,
-          num_predict: config.llm.planning.maxTokens
-        }
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(`LLM request failed: ${response.statusText}`)
-    }
-
-    const data = await response.json()
-    const parsed = JSON.parse(data.response.trim())
-
-    console.log(`📋 LLM query plan:`, JSON.stringify(parsed, null, 2))
-
-    return parsed
-  } catch (error) {
-    console.error('❌ Planning failed:', error)
-
-    // Fallback to semantic search
-    return {
-      intent: 'conceptual',
-      confidence: 0.3,
-      is_valid: true,
-      reason: 'Failed to parse query, using semantic search fallback',
-      data_sources: [{
-        source: 'vector_search_unified',
-        params: { query, limit: top_k }
-      }]
-    }
+  // Pattern 1: Explicit "top X models/repos" queries → balanced with slight structured preference (50/50)
+  // Don't force too high structured % - if models don't match well, blogs explaining models are better
+  if (/\b(top|best|popular|leading|show|list|find)\s+\d*\s*(model|repo|framework|library|database|tool|package)/i.test(lowerQuery)) {
+    return { blog: 0.5, structured: 0.5 }
   }
+
+  // Pattern 2: How-to/tutorial/implementation queries → favor blogs (80/20)
+  if (/\b(how to|how do|tutorial|guide|step[\s-]?by[\s-]?step|walkthrough|example|implement|build|create|setup|configure)/i.test(lowerQuery)) {
+    return { blog: 0.8, structured: 0.2 }
+  }
+
+  // Pattern 3: Comparison queries → favor blogs for depth (70/30)
+  if (/\b(vs|versus|compare|comparison|difference|better|choose|which)/i.test(lowerQuery)) {
+    return { blog: 0.7, structured: 0.3 }
+  }
+
+  // Pattern 4: Conceptual/explanation queries → favor blogs (75/25)
+  if (/\b(what is|what are|explain|understand|learn|why|when|concept)/i.test(lowerQuery)) {
+    return { blog: 0.75, structured: 0.25 }
+  }
+
+  // Default: favor blogs slightly (70/30) - they typically have more context
+  return { blog: 0.7, structured: 0.3 }
 }
 
-function buildPlanningPrompt(query: string, top_k: number): string {
-  return `You are a query planner for a RAG system about ML/AI. Analyze the query and create an execution plan.
-
-QUESTION: "${query}"
-
-ROUTING DECISION - Choose data source based on query type:
-
-A. Query asks "top/best/most/leading/popular" + wants LIST of models
-   → Use: top_models_by_downloads
-   → Extract rag_category: "embedding", "reranking", etc.
-   → Examples: "top embedding models", "best reranking models", "most popular models"
-
-B. Query asks "top/best/most/leading/popular" + wants LIST of repos/frameworks
-   → Use: top_repos_by_stars
-   → Extract rag_category: "rag_tool", "vector_db", etc.
-   → Examples: "best RAG frameworks", "most popular vector databases"
-
-C. Query asks about trends/popularity over time
-   → Use: search_trends
-
-D. All other queries (explanations, how-to, what is X, comparisons)
-   → Use: vector_search_unified
-
-OUTPUT JSON:
-{
-  "intent": "market_intelligence|implementation|troubleshooting|comparison|conceptual|invalid",
-  "confidence": 0.0-1.0,
-  "is_valid": true|false,
-  "reason": "brief explanation",
-  "data_sources": [
-    {
-      "source": "top_models_by_downloads|top_repos_by_stars|search_trends|vector_search_unified",
-      "params": {
-        "query": "only for vector_search_unified",
-        "categories": ["only if extractable from query"],
-        "limit": ${top_k}
-      }
-    }
-  ]
-}
-
-CRITICAL: "What are the top X models" → top_models_by_downloads NOT vector_search_unified
-
-RESPOND WITH VALID JSON ONLY.`
-}

@@ -26,6 +26,10 @@ export interface DataSourceQuery {
     owners?: string[]
     categories?: string[]
     limit?: number
+    weights?: {
+      blog: number
+      structured: number
+    }
   }
 }
 

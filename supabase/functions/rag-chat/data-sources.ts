@@ -30,7 +30,8 @@ function getHybridSearch(): HybridSearch {
         candidateCount: config.search.candidateCount,
         descriptionMax: config.search.context.descriptionMax
       },
-      config.embedding.model
+      config.embedding.model,
+      config.search.enableStratifiedSampling
     )
   }
   return hybridSearch
@@ -61,7 +62,11 @@ export async function executeDataSource(
       return await new TrendsRepository(supabase).getTopTrends(limit)
 
     case 'vector_search_unified':
-      return await getHybridSearch().search(query.params?.query || '', limit)
+      return await getHybridSearch().search(
+        query.params?.query || '',
+        limit,
+        query.params?.weights
+      )
 
     default:
       console.error(`Unknown data source: ${query.source}`)

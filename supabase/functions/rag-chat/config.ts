@@ -34,7 +34,10 @@ export const config = {
   // Search and context configuration
   search: {
     // Candidate fetching for reranking
-    candidateCount: 100,       // Always fetch 100 candidates for reranking
+    candidateCount: 30,       // Fetch 30 candidates from each method (60 total for RRF)
+
+    // Stratified sampling configuration
+    enableStratifiedSampling: false,  // Set to false to disable diversity enforcement (pure RRF scoring)
 
     // Context sizing (token-optimized)
     context: {

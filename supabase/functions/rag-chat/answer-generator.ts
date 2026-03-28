@@ -59,7 +59,8 @@ function formatMarketIntelligence(results: SearchResult[]): string {
 
   results.forEach((item, i) => {
     const num = i + 1
-    answer += `\n${num}. **[${item.name}](${item.url})**\n`
+    const cleanName = item.name.replace(/\s*\(part\s+\d+\/\d+\)\s*$/i, '').trim()
+    answer += `\n${num}. **[${cleanName}](${item.url})**\n`
 
     if (docType === 'hf_model') {
       if (item.downloads) answer += `   - Downloads: ${item.downloads.toLocaleString()}\n`
