@@ -62,7 +62,6 @@ def main():
                 "is_rag_related": m.is_rag_related,
                 "rag_category": m.rag_category,
                 "tags": m.tags,
-                "description": m.description,
                 "url": m.url,
                 "last_updated": m.last_updated,
             }
@@ -76,7 +75,7 @@ def main():
     # ========================================
     logger.info("\n📥 STEP 2: Fetching GitHub repos...")
     gh_fetcher = GitHubFetcher(api_token=gh_token)
-    repos = gh_fetcher.fetch_top_repos(max_repos=200)
+    repos = gh_fetcher.fetch_top_repos(max_repos=300)  # Increased for better RAG coverage
     rag_repos = [r for r in repos if r.is_rag_related]
 
     logger.info(f"   Found {len(rag_repos)} RAG repos (out of {len(repos)} total)")
@@ -88,7 +87,6 @@ def main():
                 "snapshot_date": snapshot_date,
                 "repo_name": r.repo_name,
                 "owner": r.owner,
-                "description": r.description,
                 "stars": r.stars,
                 "forks": r.forks,
                 "watchers": r.watchers,

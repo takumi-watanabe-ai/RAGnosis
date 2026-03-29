@@ -63,6 +63,16 @@ class GitHubFetcher:
             "autogpt", "auto-gpt", "babyagi", "crewai", "agentgpt",
             "superagi", "agent", "agentic"
         ],
+        "document_processing": [  # Verified from Unstructured-IO, pypdf, docling
+            "unstructured", "pypdf", "docling", "document-parser", "document-parsing",
+            "pdf-parser", "pdf-parsing", "ocr", "information-retrieval",
+            "preprocessing", "pdf-to-text", "pdf-to-json"
+        ],
+        "observability": [  # Verified from langfuse, ragas, phoenix
+            "langfuse", "phoenix", "llm-observability", "observability",
+            "monitoring", "evaluation", "evals", "llm-evaluation",
+            "llmops", "tracing", "prompt-engineering"
+        ],
     }
 
     # Keywords for RAG detection (SPECIFIC - no generic LLM terms)
@@ -82,7 +92,15 @@ class GitHubFetcher:
         "agent", "agentic", "multi-agent",
 
         # Retrieval-specific
-        "retrieval", "document retrieval", "context retrieval"
+        "retrieval", "document retrieval", "context retrieval",
+
+        # Document processing (verified from research)
+        "document parser", "document-parser", "pdf parser", "ocr",
+        "information-retrieval", "preprocessing",
+
+        # Observability/Evaluation (verified from research)
+        "llm observability", "llm-observability", "observability",
+        "evaluation", "evals", "llm evaluation", "llmops", "monitoring"
     ]
 
     def __init__(self, output_dir: str = "data", api_token: Optional[str] = None):
@@ -200,7 +218,8 @@ class GitHubFetcher:
                 return None
 
             owner = data.get("owner", {}).get("login", "")
-            description = data.get("description", "")
+            # Skip description (will extract from README during embedding for consistency)
+            description = ""
             stars = data.get("stargazers_count", 0)
             forks = data.get("forks_count", 0)
             watchers = data.get("watchers_count", 0)

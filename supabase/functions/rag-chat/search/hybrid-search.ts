@@ -12,6 +12,7 @@ declare const Supabase: any
 interface SearchConfig {
   candidateCount: number
   descriptionMax: number
+  structuredDataBoost: number
 }
 
 export class HybridSearch {
@@ -102,7 +103,7 @@ export class HybridSearch {
   private async performTextSearch(query: string): Promise<SearchResult[]> {
     const { data, error } = await this.supabase.rpc('text_search_documents', {
       search_query: query,
-      match_count: this.config.candidateCount,
+      match_limit: this.config.candidateCount,
       filter_doc_type: null,
       filter_rag_category: null
     })
@@ -154,11 +155,10 @@ export class HybridSearch {
 
     // Apply boost to models/repos (compensate for shorter content vs long blog articles)
     // BM25 heavily penalizes short documents - need significant boost to compete
-    // Increased from 2x to 5x to better surface structured data that matches the query
     scores.forEach((value) => {
       const docType = value.result.doc_type
       if (docType === 'hf_model' || docType === 'github_repo') {
-        value.score *= 5.0  // 5x boost to compensate for BM25 length penalty
+        value.score *= this.config.structuredDataBoost
       }
     })
 

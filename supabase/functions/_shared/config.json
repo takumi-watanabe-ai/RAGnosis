@@ -5,5 +5,11 @@
     "model_js": "gte-small",
     "dimensions": 384,
     "batch_size": 32
+  },
+  "chunking": {
+    "threshold": 2000,
+    "chunk_size": 1800,
+    "overlap": 300,
+    "max_tokens_context": 512
   }
 }

@@ -153,7 +153,7 @@ Answer:`
 function getInstructionsByIntent(intent: QueryIntent): string {
   const baseRules = `You are a RAG/ML expert. Answer STRICTLY using ONLY the sources above.
 
-LENGTH: Approximately ${config.llm.answer.targetWords} words. Be complete but concise.
+LENGTH: Max limit ${config.llm.answer.targetWords} words. Be complete but concise.
 
 FORMATTING:
 - ALWAYS reference sources inline as clickable links: **[Name](url)**

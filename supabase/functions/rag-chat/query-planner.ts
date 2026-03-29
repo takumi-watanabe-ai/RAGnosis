@@ -92,7 +92,7 @@ function determineWeights(query: string): { blog: number; structured: number } {
   // Pattern 1: Explicit "top X models/repos" queries → balanced with slight structured preference (50/50)
   // Don't force too high structured % - if models don't match well, blogs explaining models are better
   if (/\b(top|best|popular|leading|show|list|find)\s+\d*\s*(model|repo|framework|library|database|tool|package)/i.test(lowerQuery)) {
-    return { blog: 0.5, structured: 0.5 }
+    return { blog: 0.2, structured: 0.8 }
   }
 
   // Pattern 2: How-to/tutorial/implementation queries → favor blogs (80/20)

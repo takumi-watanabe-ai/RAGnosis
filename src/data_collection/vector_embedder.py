@@ -7,13 +7,17 @@ Embeds HF models, GitHub repos, and blog articles into a single documents table.
 import json
 import logging
 import os
+import time
+import base64
 from datetime import date
 from pathlib import Path
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional, Tuple
 from dotenv import load_dotenv
 
+import requests
 from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
+from huggingface_hub import ModelCard
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -69,18 +73,119 @@ class UnifiedVectorEmbedder:
 
         logger.info(f"✅ Unified vector embedder initialized")
 
-    def _chunk_text(self, text: str, chunk_size: int = 1800, overlap: int = 300) -> List[str]:
+        # Load chunking config
+        self.chunking_threshold = CONFIG["chunking"]["threshold"]
+        self.chunk_size = CONFIG["chunking"]["chunk_size"]
+        self.chunk_overlap = CONFIG["chunking"]["overlap"]
+
+    def _extract_description_from_text(self, text: str) -> str:
+        """Extract short description from README/model card text (first ~200 chars)."""
+        if not text:
+            return ""
+
+        # Get first meaningful paragraph (skip headers, yaml frontmatter, empty lines)
+        lines = text.split('\n')
+        description_lines = []
+
+        for line in lines:
+            line = line.strip()
+            # Skip markdown headers, yaml frontmatter, empty lines
+            if line and not line.startswith('#') and not line.startswith('---'):
+                description_lines.append(line)
+                # Get first ~200 chars of meaningful content
+                if len(' '.join(description_lines)) > 200:
+                    break
+
+        if description_lines:
+            return ' '.join(description_lines)[:500]  # Limit to 500 chars max
+
+        return ""
+
+    def _fetch_hf_model_card(self, model_name: str, hf_token: str = None) -> Optional[str]:
+        """
+        Fetch full model card (README) from HuggingFace.
+
+        Args:
+            model_name: HuggingFace model ID (e.g., 'Supabase/gte-small')
+            hf_token: Optional HuggingFace token for higher rate limits
+
+        Returns:
+            Full model card text or None if fetch fails
+        """
+        try:
+            logger.debug(f"Fetching model card for {model_name}")
+            card = ModelCard.load(model_name, token=hf_token)
+
+            if card.text:
+                logger.debug(f"  ✓ Fetched {len(card.text)} chars")
+                return card.text
+            else:
+                logger.debug(f"  ⚠️  No card text available")
+                return None
+
+        except Exception as e:
+            logger.warning(f"  ✗ Failed to fetch model card for {model_name}: {e}")
+            return None
+
+    def _fetch_github_readme(self, repo_name: str, github_token: str = None) -> Optional[str]:
+        """
+        Fetch README from GitHub repository.
+
+        Args:
+            repo_name: Full repo name (e.g., 'supabase/supabase')
+            github_token: Optional GitHub token for higher rate limits
+
+        Returns:
+            README content or None if fetch fails
+        """
+        try:
+            logger.debug(f"Fetching README for {repo_name}")
+
+            # Prepare headers
+            headers = {
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'RAGnosis/1.0 (search indexing)'
+            }
+            if github_token:
+                headers['Authorization'] = f'token {github_token}'
+
+            # Fetch README
+            url = f"https://api.github.com/repos/{repo_name}/readme"
+            response = requests.get(url, headers=headers, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+                content = base64.b64decode(data['content']).decode('utf-8')
+                logger.debug(f"  ✓ Fetched {len(content)} chars")
+                return content
+            elif response.status_code == 404:
+                logger.debug(f"  ⚠️  No README found")
+                return None
+            else:
+                logger.warning(f"  ✗ GitHub API returned {response.status_code}")
+                return None
+
+        except Exception as e:
+            logger.warning(f"  ✗ Failed to fetch README for {repo_name}: {e}")
+            return None
+
+    def _chunk_text(self, text: str, chunk_size: int = None, overlap: int = None) -> List[str]:
         """
         Chunk text into overlapping segments.
 
         Args:
             text: Text to chunk
-            chunk_size: Target chunk size in characters (~450 tokens, leaves room for prefix)
-            overlap: Overlap between chunks (16.7% for semantic continuity)
+            chunk_size: Target chunk size in characters (defaults to config)
+            overlap: Overlap between chunks (defaults to config)
 
         Returns:
             List of text chunks
         """
+        # Use config defaults if not specified
+        if chunk_size is None:
+            chunk_size = self.chunk_size
+        if overlap is None:
+            overlap = self.chunk_overlap
         if len(text) <= chunk_size:
             return [text]
 
@@ -191,77 +296,192 @@ class UnifiedVectorEmbedder:
 
     def prepare_documents(
         self, models: List[Dict], repos: List[Dict], articles: List[Dict], existing_ids: Set[str]
-    ) -> List[Dict]:
+    ) -> Tuple[List[Dict], List[Dict]]:
         """
-        Prepare all documents for embedding.
-        - NEW documents: Create fresh embeddings
-        - EXISTING models/repos: Re-embed if metadata changed (downloads/stars)
-        - EXISTING articles: Skip (don't change)
-
-        Returns list of documents with unified schema.
+        Prepare documents for embedding and metadata updates.
+        
+        Returns:
+            (new_documents, existing_documents) where:
+            - new_documents: Need README/model card fetch + embedding
+            - existing_documents: Only need metadata updates (no embedding)
         """
-        logger.info("\n🔄 Preparing documents for embedding...")
+        logger.info("\n🔄 Preparing documents...")
 
-        documents = []
-        updated_count = 0
+        new_documents = []
+        existing_documents = []
+        readme_fetch_count = 0
 
-        # Process models (always re-embed to get latest metadata)
-        for model in models:
+        # Get API tokens for fetching content
+        hf_token = os.getenv("HUGGINGFACE_API_KEY")
+
+        # Process models
+        logger.info(f"📝 Processing {len(models)} models...")
+        for idx, model in enumerate(models):
             model_id = model["id"]
+            model_name = model["model_name"]
 
-            # Always process models from latest snapshot (they're small, ~40 total)
-            # This ensures download counts and popularity rankings stay current
             if model_id in existing_ids:
-                updated_count += 1
+                # Existing model: only update metadata (no README fetch, no embedding)
+                doc = {
+                    "id": model_id,
+                    # Frequently-changing metadata
+                    "downloads": model.get("downloads"),
+                    "likes": model.get("likes"),
+                    "ranking_position": model.get("ranking_position"),
+                    "snapshot_date": model.get("snapshot_date"),
+                }
+                existing_documents.append(doc)
+            else:
+                # New model: fetch model card and prepare for embedding
+                model_card = self._fetch_hf_model_card(model_name, hf_token)
+                if model_card:
+                    readme_fetch_count += 1
 
-            doc = {
-                "id": model_id,
-                "name": model["model_name"],
-                "description": model.get("description", ""),
-                "url": model["url"],
-                "doc_type": "hf_model",
-                "rag_category": model.get("rag_category"),
-                "topics": model.get("tags", []),  # HF tags → topics
-                # Metadata
-                "downloads": model.get("downloads"),
-                "likes": model.get("likes"),
-                "ranking_position": model.get("ranking_position"),
-                "author": model.get("author"),
-                "task": model.get("task"),  # NEW: task field
-                "snapshot_date": model.get("snapshot_date"),
-            }
-            documents.append(doc)
+                # Extract description from model card (first ~200 chars)
+                description = self._extract_description_from_text(model_card) if model_card else ""
 
-        # Process repos (always re-embed to get latest metadata)
-        for repo in repos:
+                # Conditional chunking based on content length
+                if model_card and len(model_card) > self.chunking_threshold:
+                    # Long model card: chunk it
+                    chunks = self._chunk_text(model_card)
+                    logger.debug(f"   Chunking model card '{model_name}' into {len(chunks)} chunks")
+
+                    for i, chunk in enumerate(chunks):
+                        doc = {
+                            "id": f"{model_id}_chunk_{i}",
+                            "parent_id": model_id,
+                            "chunk_index": i,
+                            "name": f"{model_name} (part {i+1}/{len(chunks)})",
+                            "description": description,
+                            "readme_content": chunk,
+                            "url": model["url"],
+                            "doc_type": "hf_model",
+                            "rag_category": model.get("rag_category"),
+                            "topics": model.get("tags", []),
+                            # Metadata
+                            "downloads": model.get("downloads"),
+                            "likes": model.get("likes"),
+                            "ranking_position": model.get("ranking_position"),
+                            "author": model.get("author"),
+                            "task": model.get("task"),
+                            "snapshot_date": model.get("snapshot_date"),
+                        }
+                        new_documents.append(doc)
+                else:
+                    # Short model card: single document
+                    doc = {
+                        "id": model_id,
+                        "parent_id": None,
+                        "chunk_index": 0,
+                        "name": model_name,
+                        "description": description,
+                        "readme_content": model_card,  # Full model card
+                        "url": model["url"],
+                        "doc_type": "hf_model",
+                        "rag_category": model.get("rag_category"),
+                        "topics": model.get("tags", []),
+                        # Metadata
+                        "downloads": model.get("downloads"),
+                        "likes": model.get("likes"),
+                        "ranking_position": model.get("ranking_position"),
+                        "author": model.get("author"),
+                        "task": model.get("task"),
+                        "snapshot_date": model.get("snapshot_date"),
+                    }
+                    new_documents.append(doc)
+
+                # Rate limiting: small delay every 10 requests
+                if (idx + 1) % 10 == 0:
+                    time.sleep(0.5)
+
+        logger.info(f"   ✓ Fetched {readme_fetch_count}/{len([m for m in models if m['id'] not in existing_ids])} model cards for new models")
+
+        # Process repos
+        logger.info(f"📝 Processing {len(repos)} repos...")
+        github_token = os.getenv("GITHUB_TOKEN")
+        readme_fetch_count_repos = 0
+
+        for idx, repo in enumerate(repos):
             repo_id = repo["id"]
+            repo_name = repo["repo_name"]
 
-            # Always process repos from latest snapshot (they're small, ~20 total)
-            # This ensures star counts and popularity rankings stay current
             if repo_id in existing_ids:
-                updated_count += 1
+                # Existing repo: only update metadata (no README fetch, no embedding)
+                doc = {
+                    "id": repo_id,
+                    # Frequently-changing metadata
+                    "stars": repo.get("stars"),
+                    "forks": repo.get("forks"),
+                    "ranking_position": repo.get("ranking_position"),
+                    "snapshot_date": repo.get("snapshot_date"),
+                }
+                existing_documents.append(doc)
+            else:
+                # New repo: fetch README and prepare for embedding
+                readme = self._fetch_github_readme(repo_name, github_token)
+                if readme:
+                    readme_fetch_count_repos += 1
 
-            doc = {
-                "id": repo_id,
-                "name": repo["repo_name"],
-                "description": repo.get("description", ""),
-                "url": repo["url"],
-                "doc_type": "github_repo",
-                "rag_category": repo.get("rag_category"),
-                "topics": repo.get("topics", []),  # GitHub topics
-                # Metadata
-                "stars": repo.get("stars"),
-                "forks": repo.get("forks"),
-                "ranking_position": repo.get("ranking_position"),
-                "owner": repo.get("owner"),
-                "language": repo.get("language"),
-                "snapshot_date": repo.get("snapshot_date"),
-            }
-            documents.append(doc)
+                # Extract description from README (first ~200 chars)
+                description = self._extract_description_from_text(readme) if readme else ""
 
-        # Process blog articles with conditional chunking
-        CHUNK_THRESHOLD = 2000  # Only chunk if exceeds single chunk size
+                # Conditional chunking based on content length
+                if readme and len(readme) > self.chunking_threshold:
+                    # Long README: chunk it
+                    chunks = self._chunk_text(readme)
+                    logger.debug(f"   Chunking README '{repo_name}' into {len(chunks)} chunks")
 
+                    for i, chunk in enumerate(chunks):
+                        doc = {
+                            "id": f"{repo_id}_chunk_{i}",
+                            "parent_id": repo_id,
+                            "chunk_index": i,
+                            "name": f"{repo_name} (part {i+1}/{len(chunks)})",
+                            "description": description,
+                            "readme_content": chunk,
+                            "url": repo["url"],
+                            "doc_type": "github_repo",
+                            "rag_category": repo.get("rag_category"),
+                            "topics": repo.get("topics", []),
+                            # Metadata
+                            "stars": repo.get("stars"),
+                            "forks": repo.get("forks"),
+                            "ranking_position": repo.get("ranking_position"),
+                            "owner": repo.get("owner"),
+                            "language": repo.get("language"),
+                            "snapshot_date": repo.get("snapshot_date"),
+                        }
+                        new_documents.append(doc)
+                else:
+                    # Short README: single document
+                    doc = {
+                        "id": repo_id,
+                        "parent_id": None,
+                        "chunk_index": 0,
+                        "name": repo_name,
+                        "description": description,
+                        "readme_content": readme,  # Full README
+                        "url": repo["url"],
+                        "doc_type": "github_repo",
+                        "rag_category": repo.get("rag_category"),
+                        "topics": repo.get("topics", []),
+                        # Metadata
+                        "stars": repo.get("stars"),
+                        "forks": repo.get("forks"),
+                        "ranking_position": repo.get("ranking_position"),
+                        "owner": repo.get("owner"),
+                        "language": repo.get("language"),
+                        "snapshot_date": repo.get("snapshot_date"),
+                    }
+                    new_documents.append(doc)
+
+                # Rate limiting: small delay every 10 requests
+                if (idx + 1) % 10 == 0:
+                    time.sleep(0.5)
+
+        logger.info(f"   ✓ Fetched {readme_fetch_count_repos}/{len([r for r in repos if r['id'] not in existing_ids])} READMEs for new repos")
+
+        # Process blog articles with conditional chunking (always new, never update)
         for article in articles:
             article_id = article["id"]
 
@@ -273,7 +493,7 @@ class UnifiedVectorEmbedder:
             title = article["title"]
 
             # Conditional chunking based on content length
-            if len(full_content) <= CHUNK_THRESHOLD:
+            if len(full_content) <= self.chunking_threshold:
                 # Short article: single document
                 doc = {
                     "id": article_id,
@@ -283,17 +503,17 @@ class UnifiedVectorEmbedder:
                     "description": full_content,
                     "url": article["url"],
                     "doc_type": "blog_article",
-                    "rag_category": None,  # Blogs don't have rag_category
-                    "topics": article.get("rag_topics", []),  # rag_topics → topics
+                    "rag_category": None,
+                    "topics": article.get("rag_topics", []),
                     # Content metadata
                     "published_at": article.get("published_at"),
-                    "content_source": article.get("source"),  # source → content_source
+                    "content_source": article.get("source"),
                     "scrape_method": article.get("scrape_method"),
                 }
-                documents.append(doc)
+                new_documents.append(doc)
             else:
                 # Long article: chunk it
-                chunks = self._chunk_text(full_content, chunk_size=1800, overlap=300)
+                chunks = self._chunk_text(full_content)
                 logger.debug(f"   Chunking article '{title[:50]}' into {len(chunks)} chunks")
 
                 for i, chunk in enumerate(chunks):
@@ -312,15 +532,13 @@ class UnifiedVectorEmbedder:
                         "content_source": article.get("source"),
                         "scrape_method": article.get("scrape_method"),
                     }
-                    documents.append(doc)
+                    new_documents.append(doc)
 
-        new_count = len(documents) - updated_count
-        logger.info(f"✅ Prepared {len(documents)} documents for embedding")
-        logger.info(f"   - New: {new_count}")
-        logger.info(f"   - Updated (metadata refresh): {updated_count}")
-        logger.info(f"   - Skipped articles: {len(articles) - sum(1 for d in documents if d['doc_type'] == 'blog_article')}")
+        logger.info(f"✅ Prepared documents:")
+        logger.info(f"   - New (need embedding): {len(new_documents)}")
+        logger.info(f"   - Existing (metadata update only): {len(existing_documents)}")
 
-        return documents
+        return new_documents, existing_documents
 
     def _create_embedding_text(self, doc: Dict) -> str:
         """
@@ -369,6 +587,10 @@ class UnifiedVectorEmbedder:
             if doc.get('description'):
                 parts.append(doc['description'])
 
+            # Add full model card README (main searchable content)
+            if doc.get('readme_content'):
+                parts.append(doc['readme_content'])
+
             return "\n".join(parts)
 
         elif doc_type == 'github_repo':
@@ -415,6 +637,10 @@ class UnifiedVectorEmbedder:
             # Add description (already semantic)
             if doc.get('description'):
                 parts.append(doc['description'])
+
+            # Add full README (main searchable content)
+            if doc.get('readme_content'):
+                parts.append(doc['readme_content'])
 
             return "\n".join(parts)
 
@@ -523,6 +749,38 @@ class UnifiedVectorEmbedder:
 
         logger.info(f"✅ Successfully upserted {len(rows)} documents")
 
+    def update_metadata_only(self, documents: List[Dict]):
+        """Update only frequently-changing metadata fields for existing documents.
+        
+        This avoids re-fetching READMEs and re-generating embeddings for documents
+        that already exist. Only updates: downloads, stars, forks, likes, 
+        ranking_position, and snapshot_date.
+        """
+        if not documents:
+            logger.info("⏭️  No metadata to update")
+            return
+
+        logger.info(f"\n📊 Updating metadata for {len(documents)} existing documents...")
+
+        # Batch update using upsert (Supabase will update matching IDs)
+        batch_size = 100
+        for i in range(0, len(documents), batch_size):
+            batch = documents[i : i + batch_size]
+
+            try:
+                # Upsert only the metadata fields
+                # Supabase upsert will update only the provided fields for existing rows
+                self.client.table(self.documents_table).upsert(batch).execute()
+
+                if (i // batch_size + 1) % 5 == 0:
+                    logger.info(f"  Updated {i + len(batch)}/{len(documents)} documents")
+
+            except Exception as e:
+                logger.error(f"❌ Failed to update metadata batch {i // batch_size + 1}: {e}")
+                # Continue with next batch
+
+        logger.info(f"✅ Successfully updated metadata for {len(documents)} documents")
+
     def run_pipeline(self, snapshot_date: str = None):
         """
         Run the complete unified embedding pipeline.
@@ -530,12 +788,12 @@ class UnifiedVectorEmbedder:
         Workflow:
         1. Fetch RAG-related models/repos from time-series tables (latest snapshot)
         2. Check existing IDs in documents table
-        3. Only fetch blog articles if they don't have embeddings yet
-        4. Generate embeddings for NEW documents only
-        5. Upsert to unified documents table
+        3. NEW entries: Fetch README/model card + generate embeddings + full upsert
+        4. EXISTING entries: Only update metadata (downloads, stars, etc.) - no embedding
+        5. Blog articles: Only process if new (never update)
 
         Args:
-            snapshot_date: Date to fetch data for (default: today - ensures we only run if data was collected today)
+            snapshot_date: Date to fetch data for (default: today)
         """
         logger.info("\n" + "=" * 60)
         logger.info("🚀 STARTING UNIFIED VECTOR EMBEDDING PIPELINE")
@@ -543,7 +801,7 @@ class UnifiedVectorEmbedder:
 
         if snapshot_date is None:
             snapshot_date = date.today().isoformat()
-            logger.info(f"📅 Using today's snapshot date: {snapshot_date} (no update if data not collected)")
+            logger.info(f"📅 Using today's snapshot date: {snapshot_date}")
 
         try:
             # Step 1: Get existing IDs from documents table
@@ -567,22 +825,29 @@ class UnifiedVectorEmbedder:
                 logger.info("📰 Fetching blog articles (first time embedding)")
                 articles = self.fetch_articles_from_sql()
 
-            # Step 3: Prepare documents (filter out existing)
+            # Step 3: Prepare documents (separate new vs existing)
             logger.info("\n🔄 STEP 2: Preparing documents...")
-            documents = self.prepare_documents(models, repos, articles, existing_ids)
+            new_documents, existing_documents = self.prepare_documents(
+                models, repos, articles, existing_ids
+            )
 
-            if not documents:
-                logger.info("\n✅ No new documents to embed (all entries already exist)")
-                logger.info("=" * 60 + "\n")
-                return
+            # Step 4: Generate embeddings for NEW documents only
+            if new_documents:
+                logger.info("\n🧮 STEP 3: Generating embeddings for new documents...")
+                documents_with_embeddings = self.generate_embeddings(new_documents)
 
-            # Step 4: Generate embeddings
-            logger.info("\n🧮 STEP 3: Generating embeddings...")
-            documents_with_embeddings = self.generate_embeddings(documents)
+                logger.info("\n⬆️  STEP 4: Upserting new documents with embeddings...")
+                self.upsert_documents(documents_with_embeddings)
+            else:
+                logger.info("\n✅ No new documents to embed")
+                documents_with_embeddings = []
 
-            # Step 5: Upsert to documents table
-            logger.info("\n⬆️  STEP 4: Upserting to documents table...")
-            self.upsert_documents(documents_with_embeddings)
+            # Step 5: Update metadata for EXISTING documents (no embedding)
+            if existing_documents:
+                logger.info("\n📊 STEP 5: Updating metadata for existing documents...")
+                self.update_metadata_only(existing_documents)
+            else:
+                logger.info("\n✅ No existing documents to update")
 
             # Success summary
             logger.info("\n" + "=" * 60)
@@ -590,12 +855,10 @@ class UnifiedVectorEmbedder:
             logger.info("=" * 60)
             logger.info(f"📊 Summary:")
             logger.info(
-                f"   - Processed {len(models)} models + {len(repos)} repos + {len(articles)} articles"
+                f"   - Sources: {len(models)} models + {len(repos)} repos + {len(articles)} articles"
             )
-            logger.info(f"   - Created {len(documents_with_embeddings)} new embeddings")
-            logger.info(
-                f"   - Skipped {len(models) + len(repos) + len(articles) - len(documents_with_embeddings)} existing entries"
-            )
+            logger.info(f"   - New documents (with embeddings): {len(documents_with_embeddings)}")
+            logger.info(f"   - Existing documents (metadata only): {len(existing_documents)}")
             logger.info(f"   - Total in documents table: {len(existing_ids) + len(documents_with_embeddings)}")
             logger.info("=" * 60 + "\n")
 

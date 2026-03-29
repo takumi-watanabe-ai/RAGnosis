@@ -37,7 +37,10 @@ export const config = {
     candidateCount: 30,       // Fetch 30 candidates from each method (60 total for RRF)
 
     // Stratified sampling configuration
-    enableStratifiedSampling: false,  // Set to false to disable diversity enforcement (pure RRF scoring)
+    enableStratifiedSampling: true,  // Set to false to disable diversity enforcement (pure RRF scoring)
+
+    // Boost for structured data (models/repos) to compensate for BM25 length penalty
+    structuredDataBoost: 0,
 
     // Context sizing (token-optimized)
     context: {

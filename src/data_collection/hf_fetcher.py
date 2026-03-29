@@ -48,12 +48,14 @@ class HFModelFetcher:
         "embedding": ["feature-extraction", "sentence-similarity", "embeddings"],
         "generation": ["text-generation", "text2text-generation"],
         "rag_tool": ["rag", "retrieval"],
+        "reranking": ["text-ranking", "reranker"],  # Verified from research
     }
 
     # All relevant tags (for identifying RAG-related models)
     ALL_RAG_TAGS = [
         "feature-extraction", "sentence-similarity", "embeddings",
-        "rag", "retrieval", "sentence-transformers"
+        "rag", "retrieval", "sentence-transformers",
+        "text-ranking", "reranker"  # Reranking models (verified from BAAI/bge-reranker, mixedbread-ai)
     ]
 
     def __init__(self, output_dir: str = "data", api_token: Optional[str] = None):
@@ -188,11 +190,11 @@ class HFModelFetcher:
                         task = tag
                         break
 
-            # Fetch description from model card
-            logger.debug(f"Fetching description for {model_name}...")
-            description = self._fetch_model_description(model_name)
+            # Skip description fetch during pipeline (optimization - will fetch during embedding)
+            # Description is extracted from full model card during embedding phase
+            description = ""
 
-            # Classify if RAG-related
+            # Classify if RAG-related (using tags/task only, no description needed for most cases)
             is_rag_related = self._is_rag_related(tags, task, model_name, description)
             rag_category = self._get_rag_category(tags, task) if is_rag_related else None
 
@@ -240,7 +242,9 @@ class HFModelFetcher:
             "rag", "retrieval augmented", "retrieval-augmented",
             "embedding", "sentence-transformers", "sentence transformers",
             "vector search", "semantic search",
-            "langchain", "llamaindex", "haystack"
+            "langchain", "llamaindex", "haystack",
+            "rerank", "reranker", "reranking",  # Verified from BAAI/bge-reranker, mixedbread-ai
+            "cross-encoder", "text-ranking"  # Verified from cross-encoder/ms-marco models
         ]
 
         return any(keyword in text for keyword in specific_rag_keywords)

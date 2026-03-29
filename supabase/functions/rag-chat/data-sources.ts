@@ -28,7 +28,8 @@ function getHybridSearch(): HybridSearch {
       supabase,
       {
         candidateCount: config.search.candidateCount,
-        descriptionMax: config.search.context.descriptionMax
+        descriptionMax: config.search.context.descriptionMax,
+        structuredDataBoost: config.search.structuredDataBoost
       },
       config.embedding.model,
       config.search.enableStratifiedSampling
