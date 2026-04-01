@@ -134,7 +134,8 @@ make scrape-sitemap     # Comprehensive blog scraping
 make embed              # Create embeddings for new data
 
 # Development
-make chat               # Start chat interface
+make web                # Start Next.js modern web UI (recommended)
+make chat               # Start Streamlit chat interface (legacy)
 make supabase-studio    # Open database UI
 ```
 
@@ -174,11 +175,13 @@ Add these secrets in GitHub repo → Settings → Secrets:
 - Cross-encoder reranking
 - Semantic caching
 - ArXiv + HackerNews integration
-
-**📋 Future:**
-- Next.js frontend
 - Analytics dashboard
-- RAGAS evaluation framework
+
+**✅ Just Added:**
+- Modern Next.js frontend with assistant-ui
+- Minimalist landing page
+- Quick question buttons by category
+- Responsive mobile/desktop design
 
 ---
 

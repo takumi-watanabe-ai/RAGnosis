@@ -1,4 +1,4 @@
-.PHONY: help setup chat scrape-sitemap embed pipeline env-prod env-local env-status eval-quick eval-full eval eval-range
+.PHONY: help setup chat web scrape-sitemap embed pipeline env-prod env-local env-status eval-quick eval-full eval eval-range
 
 help: ## Show available commands
 	@echo "RAGnosis - Simple Development Commands"
@@ -23,16 +23,22 @@ setup: ## Setup local development (Supabase + Ollama + Models)
 	@echo ""
 	@echo "💡 Next step: Run 'make pipeline' to populate data, then 'make chat'"
 
-chat: ## Run chat interface (starts edge functions + UI)
-	@echo "💬 Starting RAGnosis..."
+chat: ## Run edge function only (RAG chat endpoint)
+	@echo "💬 Starting edge function..."
+	@echo "✅ Edge function will be available at http://localhost:54321/functions/v1/rag-chat"
+	@echo ""
+	@supabase functions serve --env-file .env --no-verify-jwt 2>&1 | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+Z //g'
+
+web: ## Run Next.js web app (starts edge functions + modern React UI)
+	@echo "🚀 Starting RAGnosis Web..."
 	@echo ""
 	@echo "Starting edge functions in background..."
 	@supabase functions serve --env-file .env --no-verify-jwt > /dev/null 2>&1 & echo $$! > .edge-function.pid
 	@sleep 2
 	@echo "✅ Edge function running at http://localhost:54321/functions/v1/rag-chat"
 	@echo ""
-	@echo "Starting Streamlit UI..."
-	@streamlit run src/agent/research_agent.py; kill `cat .edge-function.pid` 2>/dev/null || true; rm -f .edge-function.pid
+	@echo "Starting Next.js dev server..."
+	@cd web && npm run dev; kill `cat ../.edge-function.pid` 2>/dev/null || true; rm -f ../.edge-function.pid
 
 scrape-blogs: ## Scrape blog articles from sitemaps
 	@echo "📰 Scraping blog articles from sitemaps..."
