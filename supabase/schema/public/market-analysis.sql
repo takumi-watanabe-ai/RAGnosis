@@ -1,32 +1,19 @@
 -- Public market structure analysis functions
 
--- Get language-category matrix
-CREATE OR REPLACE FUNCTION public.get_language_category_matrix()
+-- Get language-topic matrix
+CREATE OR REPLACE FUNCTION public.get_language_topic_matrix()
 RETURNS JSON AS $$
 DECLARE
   result JSON;
 BEGIN
   SELECT json_agg(row_to_json(t))
   INTO result
-  FROM private.get_language_category_matrix_internal() t;
+  FROM private.get_language_topic_matrix_internal() t;
 
   RETURN COALESCE(result, '[]'::json);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Get author concentration
-CREATE OR REPLACE FUNCTION public.get_author_concentration()
-RETURNS JSON AS $$
-DECLARE
-  result JSON;
-BEGIN
-  SELECT json_agg(row_to_json(t))
-  INTO result
-  FROM private.get_author_concentration_internal() t;
-
-  RETURN COALESCE(result, '[]'::json);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Get task analysis
 CREATE OR REPLACE FUNCTION public.get_task_analysis()
@@ -51,6 +38,20 @@ BEGIN
   SELECT json_agg(row_to_json(t))
   INTO result
   FROM private.get_model_competitive_position_internal() t;
+
+  RETURN COALESCE(result, '[]'::json);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Get repo competitive positioning
+CREATE OR REPLACE FUNCTION public.get_repo_competitive_position()
+RETURNS JSON AS $$
+DECLARE
+  result JSON;
+BEGIN
+  SELECT json_agg(row_to_json(t))
+  INTO result
+  FROM private.get_repo_competitive_position_internal() t;
 
   RETURN COALESCE(result, '[]'::json);
 END;

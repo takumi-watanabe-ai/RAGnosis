@@ -19,14 +19,14 @@ export const config = {
 
     // Query planning (minimal tokens for JSON output)
     planning: {
-      maxTokens: 150,      // ~100 tokens needed for JSON
+      maxTokens: 250,      // Increased for complete JSON with reasoning
       temperature: 0.3,
     },
 
     // Answer generation (optimized for cost and completeness)
     answer: {
-      maxTokens: 500,      // ~350 words, complete but concise
-      targetWords: 300,    // Explicit guidance for LLM
+      maxTokens: 1000,     // ~700 words, enough for comprehensive answers
+      targetWords: 500,    // Explicit guidance for LLM
       temperature: 0.3,
     },
   },
@@ -50,6 +50,23 @@ export const config = {
       secondaryExcerpt: 150,   // Sources 3-20 get moderate context
       descriptionMax: 150,     // Description truncation
     },
+
+    // Reranking strategy
+    reranker: {
+      strategy: 'fusion',      // 'fusion' | 'cross-encoder'
+
+      // Cross-encoder config (uses gte-small for query+doc embedding)
+      crossEncoder: {
+        topN: 20,              // Number of results after reranking
+        maxChars: 500,         // Max chars from doc for cross-encoding
+      },
+
+      // Score fusion weights
+      fusion: {
+        vectorWeight: 1.0,    // Multiply vector similarity by this
+        bm25Weight: 1.0,       // Multiply BM25 rank by this
+      },
+    },
   },
 
   // Ranking query configuration (for top models/repos queries)
@@ -60,9 +77,11 @@ export const config = {
 
   // Feature flags for experimental RAG improvements
   features: {
-    // Query planner - intelligent routing to appropriate data sources
+    // LLM Query Planner - weighted multi-source search with doc_type weights
+    // When enabled: LLM extracts intent and applies weights to boost relevant doc types
+    // When disabled: Simple hybrid search across all doc types (no weights)
     queryPlanner: {
-      enabled: false,           // ON - required for ranking queries with reranking
+      enabled: false,           // ON - uses LLM to guide search with doc_type weights
     },
 
     // Query expansion - generate semantic variations to improve recall

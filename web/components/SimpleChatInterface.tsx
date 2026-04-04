@@ -210,48 +210,54 @@ export const SimpleChatInterface = forwardRef<
                             </p>
                           ),
                           ul: ({ children }) => (
-                            <ul className="mb-6 space-y-2 list-none pl-0">
+                            <ul className="mb-6 space-y-2 list-none pl-0 [&>li]:pl-6 [&>li]:relative [&>li]:before:content-['–'] [&>li]:before:absolute [&>li]:before:left-0 [&>li]:before:text-stone [&>li]:before:font-light">
                               {children}
                             </ul>
                           ),
                           ol: ({ children }) => (
-                            <ol className="mb-6 space-y-2 list-decimal pl-6">
+                            <ol className="mb-6 space-y-2 list-decimal pl-6 [&>li]:pl-2">
                               {children}
                             </ol>
                           ),
-                          li: ({ children, ...props }) => {
-                            const isOrdered =
-                              props.node?.tagName === "li" &&
-                              props.node?.parent?.tagName === "ol";
-                            return isOrdered ? (
-                              <li className="text-base sm:text-lg text-charcoal leading-relaxed pl-2">
-                                {children}
-                              </li>
-                            ) : (
-                              <li className="text-base sm:text-lg text-charcoal leading-relaxed pl-6 relative before:content-['–'] before:absolute before:left-0 before:text-stone before:font-light">
-                                {children}
-                              </li>
-                            );
-                          },
+                          li: ({ children }) => (
+                            <li className="text-base sm:text-lg text-charcoal leading-relaxed mb-2">
+                              {children}
+                            </li>
+                          ),
                           strong: ({ children }) => (
                             <strong className="text-charcoal font-normal">
                               {children}
                             </strong>
                           ),
                           h1: ({ children }) => (
-                            <h1 className="text-2xl font-light text-charcoal mb-6 mt-8">
+                            <h1 className="text-2xl sm:text-3xl font-light text-charcoal mb-6 mt-8 border-b border-stone-border pb-3">
                               {children}
                             </h1>
                           ),
                           h2: ({ children }) => (
-                            <h2 className="text-xl font-light text-charcoal mb-4 mt-6">
+                            <h2 className="text-xl sm:text-2xl font-normal text-charcoal mb-5 mt-8 border-b border-stone-border/50 pb-2">
                               {children}
                             </h2>
                           ),
                           h3: ({ children }) => (
-                            <h3 className="text-lg font-light text-charcoal mb-3 mt-5">
+                            <h3 className="text-lg sm:text-xl font-normal text-charcoal mb-4 mt-6">
                               {children}
                             </h3>
+                          ),
+                          h4: ({ children }) => (
+                            <h4 className="text-base sm:text-lg font-medium text-charcoal mb-3 mt-5 tracking-wide">
+                              {children}
+                            </h4>
+                          ),
+                          h5: ({ children }) => (
+                            <h5 className="text-base font-medium text-charcoal mb-2 mt-4 tracking-wide uppercase text-stone">
+                              {children}
+                            </h5>
+                          ),
+                          h6: ({ children }) => (
+                            <h6 className="text-sm font-medium text-stone mb-2 mt-3 tracking-wider uppercase">
+                              {children}
+                            </h6>
                           ),
                           code: ({ children, className }) => {
                             const isInline = !className;

@@ -11,7 +11,6 @@ import { ModelsRepository } from './sources/models-repository.ts'
 import { ReposRepository } from './sources/repos-repository.ts'
 import { TrendsRepository } from './sources/trends-repository.ts'
 import { expandQuery } from './query-expander.ts'
-import { QueryPlanner } from './query-planner.ts'
 
 const supabase = createClient(
   config.database.url,
@@ -20,7 +19,6 @@ const supabase = createClient(
 
 // Lazy-initialized instances
 let hybridSearch: HybridSearch | null = null
-let queryPlanner: QueryPlanner | null = null
 
 /**
  * Get or create hybrid search instance
@@ -39,16 +37,6 @@ function getHybridSearch(): HybridSearch {
     )
   }
   return hybridSearch
-}
-
-/**
- * Get or create query planner instance
- */
-function getQueryPlanner(): QueryPlanner {
-  if (!queryPlanner) {
-    queryPlanner = new QueryPlanner()
-  }
-  return queryPlanner
 }
 
 /**
@@ -86,16 +74,20 @@ export async function executeDataSource(
     case 'vector_search_unified': {
       const originalQuery = query.params?.query || ''
 
-      // Phase 1.3: Use query planner to extract tags and filters
-      const plan = getQueryPlanner().plan(originalQuery)
-      const filters = plan.suggestedFilters
+      // Build filters from LLM planner if available
+      const filters: any = {}
+
+      if ((query.params as any)?.doc_type_weights) {
+        filters.doc_type_weights = (query.params as any).doc_type_weights
+        console.log('🎯 Using LLM-guided doc_type weights:', filters.doc_type_weights)
+      }
 
       // Query expansion if enabled
       if (config.features.queryExpansion.enabled) {
         const queries = await expandQuery(originalQuery)
         console.log(`🔄 Searching with ${queries.length} query variations`)
 
-        // Search with all query variations in parallel (with filters)
+        // Search with all query variations in parallel
         const allResults = await Promise.all(
           queries.map(q => getHybridSearch().search(q, limit, filters))
         )
@@ -115,7 +107,7 @@ export async function executeDataSource(
           .slice(0, limit)
       }
 
-      // Default: single query search with tag-based filters
+      // Default: single query search with LLM-guided weights (if available)
       return await getHybridSearch().search(originalQuery, limit, filters)
     }
 

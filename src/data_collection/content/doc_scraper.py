@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import List, Optional
 from bs4 import BeautifulSoup
 
+from rag_classifier import RAGContentClassifier
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +31,7 @@ class DocPage:
     updated_at: Optional[datetime] = None
     excerpt: Optional[str] = None
     section: Optional[str] = None  # e.g., "guides", "api-reference"
+    rag_categories: Optional[List[str]] = None  # RAG taxonomy categories
 
     @property
     def id(self) -> str:
@@ -36,7 +39,7 @@ class DocPage:
         return hashlib.sha256(self.url.encode()).hexdigest()[:16]
 
     def to_db_row(self) -> dict:
-        """Convert to database row format."""
+        """Convert to database row format for knowledge_base table."""
         return {
             "id": self.id,
             "url": self.url,
@@ -66,6 +69,18 @@ class DocScraper:
             "User-Agent": "RAGnosis/1.0 (RAG Market Intelligence)"
         })
         self.existing_urls = existing_urls or set()
+
+        # Initialize RAG content classifier
+        self.rag_classifier = RAGContentClassifier(min_matches=2, api_min_matches=3)
+
+        # Stats tracking
+        self.stats = {
+            "urls_found": 0,
+            "urls_filtered_out": 0,
+            "pages_fetched": 0,
+            "pages_rejected_no_rag": 0,
+            "pages_accepted": 0,
+        }
 
     def scrape_site(self, site_config: dict, max_pages: int = None) -> List[DocPage]:
         """Scrape documentation pages from sitemap."""
@@ -104,12 +119,33 @@ class DocScraper:
                     logger.warning(f"   [{i}/{len(page_entries)}] ⚠️  Failed: {url}")
                     continue
 
-            logger.info(f"   ✅ Scraped {len(pages)} pages")
+            logger.info(f"   ✅ Scraped {len(pages)} RAG-relevant pages")
             return pages
 
         except Exception as e:
             logger.error(f"   ❌ Sitemap error: {e}")
             return []
+
+    def log_stats(self):
+        """Log filtering statistics."""
+        logger.info("\n" + "=" * 60)
+        logger.info("📊 RAG FILTERING STATISTICS")
+        logger.info("=" * 60)
+        logger.info(f"   URLs found in sitemaps: {self.stats['urls_found']}")
+        logger.info(f"   URLs filtered out (non-RAG): {self.stats['urls_filtered_out']}")
+        logger.info(f"   Pages fetched: {self.stats['pages_fetched']}")
+        logger.info(f"   Pages rejected (no RAG categories): {self.stats['pages_rejected_no_rag']}")
+        logger.info(f"   Pages accepted (RAG-relevant): {self.stats['pages_accepted']}")
+
+        if self.stats['urls_found'] > 0:
+            url_filter_rate = (self.stats['urls_filtered_out'] / self.stats['urls_found']) * 100
+            logger.info(f"   URL filter rate: {url_filter_rate:.1f}%")
+
+        if self.stats['pages_fetched'] > 0:
+            page_filter_rate = (self.stats['pages_rejected_no_rag'] / self.stats['pages_fetched']) * 100
+            logger.info(f"   Page filter rate: {page_filter_rate:.1f}%")
+
+        logger.info("=" * 60 + "\n")
 
     def _fetch_urls_from_sitemap(self, sitemap_url: str, site_config: dict) -> List[tuple]:
         """Fetch URLs with dates from sitemap XML."""
@@ -162,9 +198,29 @@ class DocScraper:
                     (url, date) for url, date in all_entries
                     if url_pattern in url and not any(ex in url for ex in exclude)
                 ]
-                return filtered
+            else:
+                filtered = all_entries
 
-            return all_entries
+            self.stats["urls_found"] += len(filtered)
+
+            # Filter by RAG relevance
+            rag_filtered = []
+            for url, date in filtered:
+                # Check exclusion patterns first
+                should_exclude, reason = self.rag_classifier.should_exclude_url(url)
+                if should_exclude:
+                    self.stats["urls_filtered_out"] += 1
+                    continue
+
+                # Check RAG relevance
+                is_rag, categories = self.rag_classifier.is_rag_url(url)
+                if is_rag:
+                    rag_filtered.append((url, date))
+                else:
+                    self.stats["urls_filtered_out"] += 1
+
+            logger.info(f"   Filtered to {len(rag_filtered)}/{len(filtered)} RAG-relevant URLs")
+            return rag_filtered
 
         except Exception as e:
             logger.error(f"   ❌ Sitemap fetch failed: {e}")
@@ -174,6 +230,8 @@ class DocScraper:
                     site_config: dict = None) -> Optional[DocPage]:
         """Fetch and parse documentation page."""
         try:
+            self.stats["pages_fetched"] += 1
+
             response = self.session.get(url, timeout=15)
             response.raise_for_status()
 
@@ -189,10 +247,25 @@ class DocScraper:
             if not content or len(content.strip()) < 100:
                 return None
 
+            # Classify content for RAG relevance
+            classification = self.rag_classifier.classify_content(
+                title=title,
+                content=content,
+                url=url
+            )
+
+            # Reject if not RAG-relevant
+            if not classification["is_rag"]:
+                self.stats["pages_rejected_no_rag"] += 1
+                logger.debug(f"   Rejected (no RAG): {url}")
+                return None
+
             # Extract metadata
             updated_at = self._extract_date(soup) or sitemap_date
             excerpt = content[:300] if len(content) > 300 else content
             section = self._extract_section(url, site_config)
+
+            self.stats["pages_accepted"] += 1
 
             return DocPage(
                 url=url,
@@ -203,6 +276,7 @@ class DocScraper:
                 updated_at=updated_at,
                 excerpt=self._clean_text(excerpt),
                 section=section,
+                rag_categories=classification["categories"],
             )
 
         except Exception:

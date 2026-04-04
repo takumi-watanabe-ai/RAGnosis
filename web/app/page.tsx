@@ -1,7 +1,95 @@
+"use client";
+
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import {
+  getTrendsTimeSeries,
+  type TrendsTimeSeries,
+} from "@/lib/trends-analysis";
+import {
+  getModelCompetitivePosition,
+  getRepoCompetitivePosition,
+  type ModelCompetitivePosition,
+  type RepoCompetitivePosition,
+} from "@/lib/market-analysis";
+import { TrendsChart } from "@/app/market/components/TrendsChart";
+import { CompetitivePositionAnalysis } from "@/app/market/components/CompetitivePositionAnalysis";
 
 export default function Home() {
+  const [trendsData, setTrendsData] = useState<TrendsTimeSeries[]>([]);
+  const [modelPositions, setModelPositions] = useState<
+    ModelCompetitivePosition[]
+  >([]);
+  const [repoPositions, setRepoPositions] = useState<RepoCompetitivePosition[]>(
+    [],
+  );
+  const [loading, setLoading] = useState(true);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [showHero, setShowHero] = useState(false);
+  const [showQuestions, setShowQuestions] = useState(false);
+  const trendsRef = useRef<HTMLDivElement>(null);
+  const positionRef = useRef<HTMLDivElement>(null);
+  const [trendsVisible, setTrendsVisible] = useState(false);
+  const [positionVisible, setPositionVisible] = useState(false);
+
+  useEffect(() => {
+    setIsTouchDevice("ontouchstart" in window || navigator.maxTouchPoints > 0);
+
+    // Staggered entrance animations
+    setTimeout(() => setShowHero(true), 100);
+    setTimeout(() => setShowQuestions(true), 1200);
+
+    async function loadData() {
+      try {
+        const [trendsData, modelPosData, repoPosData] = await Promise.all([
+          getTrendsTimeSeries(),
+          getModelCompetitivePosition(),
+          getRepoCompetitivePosition(),
+        ]);
+        setTrendsData(trendsData);
+        setModelPositions(modelPosData);
+        setRepoPositions(repoPosData);
+      } catch (err) {
+        console.error("Error loading data:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  // Intersection observer for scroll-based animations
+  useEffect(() => {
+    const observerOptions = {
+      threshold: 0.1,
+      rootMargin: "0px 0px -100px 0px",
+    };
+
+    const trendsObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          setTrendsVisible(true);
+        }
+      });
+    }, observerOptions);
+
+    const positionObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          setPositionVisible(true);
+        }
+      });
+    }, observerOptions);
+
+    if (trendsRef.current) trendsObserver.observe(trendsRef.current);
+    if (positionRef.current) positionObserver.observe(positionRef.current);
+
+    return () => {
+      trendsObserver.disconnect();
+      positionObserver.disconnect();
+    };
+  }, [loading]);
   return (
     <div className="min-h-screen bg-cream">
       {/* Header */}
@@ -15,16 +103,16 @@ export default function Home() {
             </Link>
             <div className="flex items-center gap-4 sm:gap-6">
               <Link
-                href="/analytics"
+                href="/market"
                 className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
               >
-                Analytics
+                Market
               </Link>
               <Link
                 href="/chat"
                 className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
               >
-                Launch
+                Chat
               </Link>
             </div>
           </div>
@@ -33,7 +121,11 @@ export default function Home() {
 
       {/* Hero Section with Logo */}
       <main className="relative px-6 sm:px-12">
-        <div className="py-16 sm:py-24 md:py-32 text-center">
+        <div
+          className={`py-16 sm:py-24 md:py-32 text-center transition-all duration-1000 ${
+            showHero ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+          }`}
+        >
           {/* Logo/Icon */}
           <div className="flex justify-center mb-8 sm:mb-12">
             <Image
@@ -66,9 +158,15 @@ export default function Home() {
         </div>
 
         {/* Quick Examples */}
-        <div className="py-12 sm:py-16 border-t border-stone-border max-w-7xl  mx-auto">
+        <div
+          className={`py-12 sm:py-16 border-t border-stone-border transition-all duration-700 ${
+            showQuestions
+              ? "opacity-100 translate-y-0"
+              : "opacity-0 translate-y-12"
+          }`}
+        >
           <h2 className="text-sm sm:text-base font-normal text-center mb-8 sm:mb-10 text-charcoal uppercase tracking-[0.15em]">
-            Example Questions
+            Start Diagnosing
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <ExampleQuestion text="What are the top embedding models?" />
@@ -79,17 +177,107 @@ export default function Home() {
             <ExampleQuestion text="What's trending in RAG right now?" />
           </div>
         </div>
+
+        {/* Market Interest Over Time */}
+        {!loading && trendsData.length > 0 && (
+          <div
+            ref={trendsRef}
+            className={`py-12 sm:py-16 border-t border-stone-border transition-all duration-700 ${
+              trendsVisible
+                ? "opacity-100 translate-y-0"
+                : "opacity-0 translate-y-12"
+            }`}
+          >
+            <div className="mb-8">
+              <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-charcoal mb-2 uppercase">
+                Market Interest Over Time
+              </h2>
+              <p className="text-xs sm:text-sm text-stone font-light">
+                Search interest trends across RAG ecosystem keywords
+              </p>
+            </div>
+            <TrendsChart
+              trendsData={trendsData}
+              isTouchDevice={isTouchDevice}
+              maxTableRows={8}
+            />
+          </div>
+        )}
+
+        {/* Competitive Position Map */}
+        {!loading && modelPositions.length > 0 && repoPositions.length > 0 && (
+          <div
+            ref={positionRef}
+            className={`py-12 sm:py-16 border-t border-stone-border transition-all duration-700 ${
+              positionVisible
+                ? "opacity-100 translate-y-0"
+                : "opacity-0 translate-y-12"
+            }`}
+          >
+            <div className="mb-8">
+              <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-charcoal mb-2 uppercase">
+                Competitive Position Map
+              </h2>
+              <p className="text-xs sm:text-sm text-stone font-light">
+                Models by recency vs downloads (bubble = engagement). Toggle to
+                see repos by age vs stars.
+              </p>
+            </div>
+            <CompetitivePositionAnalysis
+              modelPositions={modelPositions}
+              repoPositions={repoPositions}
+              isTouchDevice={isTouchDevice}
+            />
+          </div>
+        )}
       </main>
 
+      {/* Subtle CTA */}
+      <div className="text-center py-12 border-t border-stone-border/50 mt-12 sm:mt-20">
+        <Link
+          href="/market"
+          className="inline-block px-8 py-3 border border-charcoal text-charcoal hover:bg-charcoal hover:text-cream transition-all text-sm font-semibold uppercase tracking-wider"
+        >
+          View Full Analysis
+        </Link>
+      </div>
+
       {/* Footer */}
-      <footer className="relative border-t border-stone-border mt-12 sm:mt-20 bg-cream">
-        <div className="px-6 sm:px-12 py-8 sm:py-10">
-          <div className="text-xs sm:text-sm text-stone font-light">
-            <p className="mb-3">
-              Built to showcase production RAG systems, LLM-powered query
-              understanding, and hybrid search architectures.
-            </p>
-            <p className="text-xs">© 2026 RAGNOSIS</p>
+      <footer className="relative border-t border-stone-border bg-cream">
+        <div className="px-6 sm:px-12 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6 sm:gap-8">
+              <Link
+                href="/market"
+                className="text-xs uppercase tracking-wider text-charcoal hover:opacity-60 transition-opacity"
+              >
+                Market
+              </Link>
+              <Link
+                href="/chat"
+                className="text-xs uppercase tracking-wider text-charcoal hover:opacity-60 transition-opacity"
+              >
+                Chat
+              </Link>
+            </div>
+            <div className="flex items-center gap-6 sm:gap-8">
+              <a
+                href="https://github.com/yourusername"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs uppercase tracking-wider text-charcoal hover:opacity-60 transition-opacity"
+              >
+                GitHub
+              </a>
+              <a
+                href="https://linkedin.com/in/yourusername"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs uppercase tracking-wider text-charcoal hover:opacity-60 transition-opacity"
+              >
+                LinkedIn
+              </a>
+            </div>
           </div>
         </div>
       </footer>

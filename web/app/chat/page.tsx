@@ -26,10 +26,6 @@ function ChatPageContent() {
     setSidebarOpen(false);
   };
 
-  const handleNewChat = () => {
-    chatRef.current?.clearChat();
-  };
-
   return (
     <div className="flex h-screen bg-cream">
       {/* Sidebar - Desktop */}
@@ -85,19 +81,13 @@ function ChatPageContent() {
                   RAGnosis
                 </span>
               </Link>
-              <Link
-                href="/analytics"
-                className="hidden sm:block text-xs text-stone hover:text-charcoal transition-opacity uppercase tracking-wider"
-              >
-                Analytics
-              </Link>
             </div>
-            <button
-              onClick={handleNewChat}
-              className="text-xs text-charcoal hover:opacity-60 transition-opacity uppercase tracking-wider"
+            <Link
+              href="/market"
+              className="text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
             >
-              New Chat
-            </button>
+              Market
+            </Link>
           </div>
         </header>
 

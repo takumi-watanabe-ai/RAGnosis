@@ -62,6 +62,9 @@ def main():
             logger.error(f"   ❌ Failed to scrape {site_id}: {e}")
             continue
 
+    # Log filtering statistics
+    scraper.log_stats()
+
     # Insert pages
     if all_pages:
         logger.info(f"\n💾 Inserting {len(all_pages)} new documentation pages...")
@@ -78,7 +81,7 @@ def main():
     logger.info("\n" + "=" * 60)
     logger.info("✅ DOCUMENTATION SCRAPING COMPLETE")
     logger.info("=" * 60)
-    logger.info(f"   📊 New pages: {len(all_pages)}")
+    logger.info(f"   📊 New RAG-relevant pages: {len(all_pages)}")
     logger.info("=" * 60)
     logger.info("💡 Next: Run 'make embed' to create vector embeddings")
     logger.info("=" * 60 + "\n")

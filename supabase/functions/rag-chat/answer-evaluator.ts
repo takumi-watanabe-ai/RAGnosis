@@ -40,7 +40,7 @@ export async function evaluateAnswer(
   }
 
   // Use LLM to evaluate quality
-  const prompt = `You are a strict answer quality evaluator. Rate this answer's quality.
+  const prompt = `You are a STRICT RAG answer evaluator. Most answers score 60-80. Be critical and demanding.
 
 Question: ${question}
 
@@ -48,16 +48,35 @@ Answer: ${answer}
 
 Sources Used: ${sourcesUsed}
 
-Rate the answer on these criteria (0-100):
-1. Relevance: Does it directly answer the question?
-2. Completeness: Are all aspects addressed?
-3. Grounding: Is it well-sourced with citations?
-4. Clarity: Is it clear and well-structured?
+SCORING RUBRIC (0-100) - BE STRICT:
+90-100: EXCEPTIONAL (rare) - Comprehensive answer with 3+ specific citations, covers all angles, provides examples/metrics, zero ambiguity
+80-89: VERY GOOD - Answers fully with 2+ good citations, well-structured, minimal gaps
+70-79: GOOD - Solid answer with citations, minor gaps in depth or coverage
+60-69: ADEQUATE - Basic answer, limited citations, lacks depth or misses some aspects
+50-59: MEDIOCRE - Partially answers, weak/generic, poor citations
+0-49: POOR - Fails to answer properly, no citations, or wrong information
 
-Respond with ONLY a JSON object (no markdown), must include issues
+EVALUATION CRITERIA (deduct points for issues):
+1. Relevance (0-25): Directly answers the specific question? Or too generic/tangential?
+2. Completeness (0-25): Covers ALL key aspects with sufficient depth? Or surface-level?
+3. Citation Quality (0-25): Specific source references? Or vague "according to sources"?
+4. Clarity & Structure (0-25): Well-organized and clear? Or rambling/confusing?
+
+COMMON ISSUES TO CHECK:
+- Vague statements without source attribution
+- Generic answers that could apply to any similar question
+- Missing key technical details or comparisons
+- No concrete examples, metrics
+- Poor structure or logical flow
+- Incomplete coverage of the question's scope
+
+BE SPECIFIC in issues:
+ALWAYS list at least 1-2 issues unless truly exceptional (90+).
+
+Respond ONLY with valid JSON (no markdown):
 {
   "score": <0-100>,
-  "issues": ["issue 1", "issue 2", ...]
+  "issues": ["specific issue 1", "specific issue 2"]
 }`
 
   try {
@@ -69,18 +88,19 @@ Respond with ONLY a JSON object (no markdown), must include issues
         prompt,
         stream: false,
         options: {
-          temperature: 0.1,
-          num_predict: 200
+          temperature: 0.2,
+          num_predict: 500
         }
       })
     })
 
     if (!response.ok) {
-      // If evaluation fails, don't iterate
+      // If evaluation fails, assume decent quality and don't iterate
+      console.error('Evaluation API call failed:', response.status)
       return {
-        score: response.score,
-        confidence: response.confidence,
-        issues: response.issues,
+        score: 70,
+        confidence: 'medium',
+        issues: ['Evaluation service unavailable'],
         shouldIterate: false
       }
     }
@@ -103,11 +123,11 @@ Respond with ONLY a JSON object (no markdown), must include issues
     }
   } catch (error) {
     console.error('Evaluation failed:', error)
-    // If evaluation fails, don't iterate (assume good enough)
+    // If evaluation fails, assume decent quality and don't iterate
     return {
-      score: -1,
-      confidence: 'error',
-      issues: [],
+      score: 70,
+      confidence: 'medium',
+      issues: ['Evaluation failed - answer accepted as-is'],
       shouldIterate: false
     }
   }

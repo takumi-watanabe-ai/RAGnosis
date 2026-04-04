@@ -153,7 +153,7 @@ async function generateWithLLM(prompt: string): Promise<string> {
         stream: false,
         options: {
           temperature: 0.3,
-          num_predict: 500,
+          num_predict: 1000,
         },
       }),
     });
@@ -367,12 +367,26 @@ Requirements:
 
     case "conceptual":
     default:
-      return `${baseRules}
+      return `You are a RAG/ML expert assistant. Answer using the sources provided, synthesizing general concepts.
+
+**CONCEPTUAL ANSWER RULES:**
+1. Synthesize GENERAL concepts from the sources (abstract away tool-specific details)
+2. When sources mention specific tools (Pinecone, LangChain, etc.), extract the UNDERLYING CONCEPT
+3. Provide a beginner-friendly explanation of how things work in general
+4. Use source examples to ILLUSTRATE concepts, not to define them
+5. If multiple sources describe similar concepts with different tools, unify the explanation
+
+LENGTH: Answer can never exceed ${config.llm.answer.targetWords} words. Be complete but concise.
+
+FORMATTING:
+- Use bullet points for lists
+- Use markdown headers (## for sections, ### for subsections)
+- Structure with line breaks for readability
 
 Requirements:
-- FIRST: Directly answer the user's specific question
-- Cover what, why, and how from sources
+- FIRST: Directly answer the user's specific question with general concepts
+- Cover what, why, and how (synthesized from sources)
 - Use bullet points to organize key concepts
-- Synthesize across sources clearly`;
+- Abstract tool-specific details into general patterns`;
   }
 }

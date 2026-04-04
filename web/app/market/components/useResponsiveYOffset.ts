@@ -8,7 +8,6 @@ export function useResponsiveYOffset() {
   useEffect(() => {
     function updateOffset() {
       const width = window.innerWidth;
-      // Desktop: -10, Mobile/Tablet: 5 (ALWAYS 5 - controls left space)
       if (width >= 1024) {
         setYOffset(-10);
       } else {

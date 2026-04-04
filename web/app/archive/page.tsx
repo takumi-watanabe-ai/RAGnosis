@@ -5,9 +5,6 @@ import Link from "next/link";
 import {
   BarChart,
   Bar,
-  PieChart,
-  Pie,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -20,7 +17,6 @@ import {
   getTopRepos,
   getLanguageDistribution,
   getAuthorLeaderboard,
-  getEcosystemOverview,
   getPopularTags,
   getPopularTopics,
   type CategoryData,
@@ -28,18 +24,12 @@ import {
   type RepoData,
   type LanguageData,
   type AuthorData,
-  type EcosystemOverview,
   type TagData,
 } from "@/lib/analytics";
-
-// Theme colors matching your design
-const COLORS = {
-  primary: ["#222222", "#333333", "#666666", "#999999", "#cccccc"],
-  accent: ["#8b7355", "#a68a64", "#c4a57b", "#e0c097"],
-};
+import { EcosystemStats } from "@/app/components/EcosystemStats";
+import { ModelCategoryDistribution } from "@/app/components/ModelCategoryDistribution";
 
 export default function AnalyticsPage() {
-  const [overview, setOverview] = useState<EcosystemOverview | null>(null);
   const [categories, setCategories] = useState<CategoryData[]>([]);
   const [topModels, setTopModels] = useState<ModelData[]>([]);
   const [topRepos, setTopRepos] = useState<RepoData[]>([]);
@@ -54,7 +44,6 @@ export default function AnalyticsPage() {
     async function loadData() {
       try {
         const [
-          overviewData,
           categoryData,
           modelData,
           repoData,
@@ -63,7 +52,6 @@ export default function AnalyticsPage() {
           tagData,
           topicData,
         ] = await Promise.all([
-          getEcosystemOverview(),
           getCategoryDistribution(),
           getTopModels(10),
           getTopRepos(10),
@@ -72,8 +60,6 @@ export default function AnalyticsPage() {
           getPopularTags(15),
           getPopularTopics(15),
         ]);
-
-        setOverview(overviewData);
         setCategories(categoryData);
         setTopModels(modelData);
         setTopRepos(repoData);
@@ -146,22 +132,16 @@ export default function AnalyticsPage() {
             </Link>
             <div className="flex items-center gap-4 sm:gap-6">
               <Link
+                href="/market"
+                className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
+              >
+                Market
+              </Link>
+              <Link
                 href="/chat"
                 className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
               >
                 Chat
-              </Link>
-              <Link
-                href="/analytics"
-                className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase border-b-2 border-charcoal"
-              >
-                Basic
-              </Link>
-              <Link
-                href="/analytics/market"
-                className="text-xs sm:text-sm font-medium tracking-wide text-stone hover:opacity-70 transition-opacity uppercase"
-              >
-                Market
               </Link>
             </div>
           </div>
@@ -182,77 +162,11 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Overview Stats */}
-          {overview && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-12">
-              <StatCard
-                label="Models"
-                value={parseInt(overview.total_models).toLocaleString()}
-              />
-              <StatCard
-                label="Repositories"
-                value={parseInt(overview.total_repos).toLocaleString()}
-              />
-              <StatCard
-                label="Total Downloads"
-                value={formatLargeNumber(parseInt(overview.total_downloads))}
-              />
-              <StatCard
-                label="Total Stars"
-                value={formatLargeNumber(parseInt(overview.total_stars))}
-              />
-            </div>
-          )}
+          <EcosystemStats />
 
           {/* Category Distribution */}
           <ChartSection title="Model Category Distribution">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={categories}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={renderPieLabel}
-                    outerRadius={100}
-                    fill="#8884d8"
-                    dataKey="count"
-                  >
-                    {categories.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={COLORS.primary[index % COLORS.primary.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex flex-col justify-center space-y-3">
-                {categories.map((cat, index) => (
-                  <div
-                    key={cat.category}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-4 h-4 border border-stone-border"
-                        style={{
-                          backgroundColor:
-                            COLORS.primary[index % COLORS.primary.length],
-                        }}
-                      />
-                      <span className="text-sm text-charcoal uppercase tracking-wide">
-                        {cat.category}
-                      </span>
-                    </div>
-                    <span className="text-sm text-stone font-light">
-                      {cat.count} models
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <ModelCategoryDistribution categories={categories} />
           </ChartSection>
 
           {/* Top Models */}
@@ -418,19 +332,6 @@ export default function AnalyticsPage() {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border border-stone-border bg-white p-4 sm:p-6">
-      <div className="text-xs sm:text-sm text-stone font-light uppercase tracking-wide mb-2">
-        {label}
-      </div>
-      <div className="text-2xl sm:text-3xl font-medium text-charcoal tracking-tight">
-        {value}
-      </div>
-    </div>
-  );
-}
-
 function ChartSection({
   title,
   children,
@@ -474,17 +375,4 @@ function CustomTooltip({ active, payload }: TooltipProps) {
     );
   }
   return null;
-}
-
-function renderPieLabel(entry: { category: string }) {
-  return `${entry.category}`;
-}
-
-function formatLargeNumber(num: number): string {
-  if (num >= 1000000) {
-    return `${(num / 1000000).toFixed(1)}M`;
-  } else if (num >= 1000) {
-    return `${(num / 1000).toFixed(1)}K`;
-  }
-  return num.toString();
 }

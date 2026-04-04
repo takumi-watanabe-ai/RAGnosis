@@ -3,17 +3,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  getLanguageCategoryMatrix,
-  getAuthorConcentration,
+  getLanguageTopicMatrix,
   getTaskAnalysis,
   getTopicAnalysis,
   getModelCompetitivePosition,
+  getRepoCompetitivePosition,
   getTechStackPatterns,
-  type LanguageCategoryMatrix,
-  type AuthorConcentration,
+  type LanguageTopicMatrix,
   type TaskAnalysis,
   type TopicAnalysis,
   type ModelCompetitivePosition,
+  type RepoCompetitivePosition,
   type TechStackPattern,
 } from "@/lib/market-analysis";
 import {
@@ -23,19 +23,21 @@ import {
 import { Section } from "./components/Section";
 import { TrendsChart } from "./components/TrendsChart";
 import { OpportunityAnalysis } from "./components/OpportunityAnalysis";
-import { ModelPositionChart } from "./components/ModelPositionChart";
-import { LanguageCategoryHeatmap } from "./components/LanguageCategoryHeatmap";
-import { AuthorMarketControlChart } from "./components/AuthorMarketControlChart";
+import { CompetitivePositionAnalysis } from "./components/CompetitivePositionAnalysis";
+import { LanguageTopicHeatmap } from "./components/LanguageTopicHeatmap";
 import { TechStackPatternsChart } from "./components/TechStackPatternsChart";
+import { EcosystemStats } from "@/app/components/EcosystemStats";
 
 export default function MarketAnalyticsPage() {
-  const [langMatrix, setLangMatrix] = useState<LanguageCategoryMatrix[]>([]);
-  const [authors, setAuthors] = useState<AuthorConcentration[]>([]);
+  const [langMatrix, setLangMatrix] = useState<LanguageTopicMatrix[]>([]);
   const [tasks, setTasks] = useState<TaskAnalysis[]>([]);
   const [topics, setTopics] = useState<TopicAnalysis[]>([]);
   const [modelPositions, setModelPositions] = useState<
     ModelCompetitivePosition[]
   >([]);
+  const [repoPositions, setRepoPositions] = useState<RepoCompetitivePosition[]>(
+    [],
+  );
   const [stackPatterns, setStackPatterns] = useState<TechStackPattern[]>([]);
   const [trendsData, setTrendsData] = useState<TrendsTimeSeries[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,27 +52,27 @@ export default function MarketAnalyticsPage() {
       try {
         const [
           matrixData,
-          authorData,
           taskData,
           topicData,
           modelPosData,
+          repoPosData,
           stackData,
           trendsData,
         ] = await Promise.all([
-          getLanguageCategoryMatrix(),
-          getAuthorConcentration(),
+          getLanguageTopicMatrix(),
           getTaskAnalysis(),
           getTopicAnalysis(),
           getModelCompetitivePosition(),
+          getRepoCompetitivePosition(),
           getTechStackPatterns(),
           getTrendsTimeSeries(),
         ]);
 
         setLangMatrix(matrixData);
-        setAuthors(authorData);
         setTasks(taskData);
         setTopics(topicData);
         setModelPositions(modelPosData);
+        setRepoPositions(repoPosData);
         setStackPatterns(stackData);
         setTrendsData(trendsData);
       } catch (err) {
@@ -122,22 +124,16 @@ export default function MarketAnalyticsPage() {
             </Link>
             <div className="flex items-center gap-4 sm:gap-6">
               <Link
+                href="/market"
+                className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
+              >
+                Market
+              </Link>
+              <Link
                 href="/chat"
                 className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
               >
                 Chat
-              </Link>
-              <Link
-                href="/analytics"
-                className="text-xs sm:text-sm font-medium tracking-wide text-stone hover:opacity-70 transition-opacity uppercase"
-              >
-                Basic
-              </Link>
-              <Link
-                href="/analytics/market"
-                className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase border-b-2 border-charcoal"
-              >
-                Market
               </Link>
             </div>
           </div>
@@ -157,13 +153,19 @@ export default function MarketAnalyticsPage() {
             </p>
           </div>
 
+          {/* Ecosystem Overview Stats */}
+          <EcosystemStats />
+
           {/* Google Trends - All Keywords */}
           {trendsData.length > 0 && (
             <Section
               title="Market Interest Over Time"
-              subtitle="Google Trends search interest by keyword - tracking RAG ecosystem momentum"
+              subtitle="Search interest trends across RAG ecosystem keywords"
             >
-              <TrendsChart trendsData={trendsData} />
+              <TrendsChart
+                trendsData={trendsData}
+                isTouchDevice={isTouchDevice}
+              />
             </Section>
           )}
 
@@ -179,31 +181,24 @@ export default function MarketAnalyticsPage() {
             />
           </Section>
 
-          {/* Model Competitive Position Map */}
+          {/* Competitive Position Analysis */}
           <Section
-            title="Model Competitive Position Map"
-            subtitle="Quality Score (engagement ratio) vs Popularity (downloads). Bubble size = Likes."
+            title="Competitive Position Map"
+            subtitle="Repos: Age since creation (X) vs Stars (Y). Models: Days since update (X) vs Downloads (Y). Bubble = engagement. Top 30 per category."
           >
-            <ModelPositionChart
+            <CompetitivePositionAnalysis
               modelPositions={modelPositions}
+              repoPositions={repoPositions}
               isTouchDevice={isTouchDevice}
             />
           </Section>
 
-          {/* Language × Category Matrix */}
+          {/* Language × Topic Matrix */}
           <Section
-            title="Language × Category Matrix"
-            subtitle="Which languages dominate which categories?"
+            title="Language × Topic Matrix"
+            subtitle="Which languages dominate which topics?"
           >
-            <LanguageCategoryHeatmap langMatrix={langMatrix} />
-          </Section>
-
-          {/* Author Market Control */}
-          <Section
-            title="Author Market Control"
-            subtitle="Top 10 authors by market share - concentration risk analysis"
-          >
-            <AuthorMarketControlChart authors={authors} />
+            <LanguageTopicHeatmap langMatrix={langMatrix} />
           </Section>
 
           {/* Technology Stack Patterns */}

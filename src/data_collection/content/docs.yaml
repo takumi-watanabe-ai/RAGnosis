@@ -3,40 +3,50 @@
 langchain_docs:
   name: "LangChain Documentation"
   source_id: "langchain-docs"
-  sitemap_url: "https://langchain.com/sitemap.xml"
-  url_pattern: "langchain.com/docs/"
-  exclude_patterns: []
+  sitemap_url: "https://docs.langchain.com/sitemap.xml"
+  url_pattern: "docs.langchain.com"
+  exclude_patterns:
+    - "/api-reference/"
+    - "/changelog"
+    - "/release-notes"
+    - "/security/"
+    - "/community/"
+    - "/pricing/"
   enabled: true
   priority: 1
   section_patterns:
-    guides: "/docs/how_to/"
-    tutorials: "/docs/tutorials/"
-    concepts: "/docs/concepts/"
-    integrations: "/docs/integrations/"
+    guides: "/oss/python/langchain/how-to/"
+    tutorials: "/oss/python/langchain/tutorials/"
+    concepts: "/oss/python/langchain/concepts/"
+    integrations: "/oss/python/langchain/integrations/"
 
 llamaindex_docs:
   name: "LlamaIndex Documentation"
   source_id: "llamaindex-docs"
-  sitemap_url: "https://docs.llamaindex.ai/sitemap.xml"
-  url_pattern: "docs.llamaindex.ai"
-  exclude_patterns: ["/community/"]
+  sitemap_url: "https://developers.llamaindex.ai/sitemap-index.xml"
+  url_pattern: "developers.llamaindex.ai"
+  exclude_patterns:
+    - "/changelog"
+    - "/release-notes"
+    - "/community/"
   enabled: true
   priority: 2
   section_patterns:
-    guides: "/en/stable/understanding/"
-    examples: "/en/stable/examples/"
-    api: "/en/stable/api_reference/"
+    guides: "/python/framework/understanding/"
+    examples: "/python/framework/examples/"
+    api: "/python/framework/api/"
 
 pinecone_docs:
   name: "Pinecone Documentation"
   source_id: "pinecone-docs"
   sitemap_url: "https://docs.pinecone.io/sitemap.xml"
-  url_pattern: "docs.pinecone.io/docs/"
-  exclude_patterns: ["/reference/api/"]
+  url_pattern: "docs.pinecone.io"
+  exclude_patterns: ["/reference/api/", "/assistant-release-notes/"]
   enabled: true
   priority: 3
   section_patterns:
     guides: "/guides/"
+    examples: "/examples/"
     reference: "/reference/"
 
 pinecone_learn:
@@ -76,7 +86,12 @@ weaviate_docs:
   source_id: "weaviate-docs"
   sitemap_url: "https://weaviate.io/sitemap.xml"
   url_pattern: "weaviate.io/developers/weaviate"
-  exclude_patterns: ["/company/", "/platform/"]
+  exclude_patterns:
+    - "/company/"
+    - "/platform/"
+    - "/pricing/"
+    - "/changelog"
+    - "/release-notes"
   enabled: true
   priority: 7
   section_patterns:
@@ -89,7 +104,9 @@ chromadb_docs:
   source_id: "chromadb-docs"
   sitemap_url: "https://docs.trychroma.com/sitemap.xml"
   url_pattern: "docs.trychroma.com"
-  exclude_patterns: []
+  exclude_patterns:
+    - "/changelog"
+    - "/release-notes"
   enabled: true
   priority: 8
   section_patterns:
@@ -101,7 +118,11 @@ qdrant_docs:
   source_id: "qdrant-docs"
   sitemap_url: "https://qdrant.tech/sitemap.xml"
   url_pattern: "qdrant.tech/documentation/"
-  exclude_patterns: ["/articles/"]
+  exclude_patterns:
+    - "/articles/"
+    - "/blog/"
+    - "/changelog"
+    - "/release-notes"
   enabled: true
   priority: 9
   section_patterns:

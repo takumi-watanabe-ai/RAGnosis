@@ -87,3 +87,34 @@ export interface SearchResult {
 export interface DataSourceResults {
   [key: string]: SearchResult[]
 }
+
+/**
+ * LLM-extracted query insights for weighted multi-source search
+ */
+export type PrimaryIntent =
+  | 'learn'          // Conceptual understanding (how/what/why)
+  | 'find_tool'      // Looking for specific models/repos/frameworks
+  | 'compare'        // Comparing options
+  | 'troubleshoot'   // Solving problems
+  | 'implement'      // Implementation guidance
+
+export interface DocTypeWeights {
+  knowledge_base: number  // 0.0 - 1.0
+  hf_model: number
+  github_repo: number
+}
+
+export interface QueryFilters {
+  task?: string          // HF task type (e.g., "feature-extraction")
+  language?: string      // Programming language (e.g., "Python")
+  attributes?: string[]  // Query attributes (e.g., ["multilingual", "fast"])
+}
+
+export interface QueryInsight {
+  primary_intent: PrimaryIntent
+  doc_type_weights: DocTypeWeights
+  filters?: QueryFilters
+  expanded_query?: string
+  confidence: number
+  reason: string
+}

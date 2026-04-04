@@ -33,6 +33,15 @@ export function TaskOpportunityChart({
     return null;
   }
 
+  // Calculate appropriate ticks based on data range
+  const maxDownloads = Math.max(...tasks.map((t) => t.avg_downloads));
+  const yAxisTicks =
+    maxDownloads > 5000000
+      ? [1000, 10000, 100000, 1000000, 10000000]
+      : maxDownloads > 2000000
+        ? [1000, 10000, 100000, 1000000, 5000000]
+        : [1000, 10000, 100000, 1000000, 3000000];
+
   return (
     <>
       <ResponsiveContainer width="100%" height={450}>
@@ -57,27 +66,21 @@ export function TaskOpportunityChart({
             dataKey="avg_downloads"
             name="Avg Success"
             stroke="#666666"
-            domain={[
-              0,
-              (dataMax: number) => {
-                const maxWithPadding = dataMax * 1.15;
-                // Round to appropriate interval based on magnitude
-                if (maxWithPadding >= 1000000) {
-                  return Math.ceil(maxWithPadding / 500000) * 500000;
-                } else if (maxWithPadding >= 100000) {
-                  return Math.ceil(maxWithPadding / 50000) * 50000;
-                } else {
-                  return Math.ceil(maxWithPadding / 10000) * 10000;
-                }
-              },
-            ]}
-            tickFormatter={(value) =>
-              value >= 1000000
-                ? `${(value / 1000000).toFixed(0)}M`
-                : value >= 1000
-                  ? `${(value / 1000).toFixed(0)}K`
-                  : value.toString()
-            }
+            scale="log"
+            domain={["auto", (dataMax: number) => dataMax * 1.5]}
+            ticks={yAxisTicks}
+            tickFormatter={(value) => {
+              if (value >= 1000000) {
+                const millions = value / 1000000;
+                return millions % 1 === 0
+                  ? `${millions.toFixed(0)}M`
+                  : `${millions.toFixed(1)}M`;
+              }
+              if (value >= 1000) {
+                return `${(value / 1000).toFixed(0)}K`;
+              }
+              return value.toString();
+            }}
             label={{
               value: "Avg Downloads per Model →",
               angle: -90,
@@ -174,13 +177,14 @@ export function TaskOpportunityChart({
 }
 
 function getTaskColor(task: TaskAnalysis): string {
-  const highCompetition = task.model_count > 30;
-  const highSuccess = task.avg_downloads > 500000;
+  // Dynamic thresholds based on the data
+  const highCompetition = task.model_count > 100; // Relaxed from 30
+  const highSuccess = task.avg_downloads > 100000; // Relaxed from 500K
 
-  if (!highCompetition && highSuccess) return "#2e8b57";
-  if (highCompetition && highSuccess) return "#4682b4";
-  if (highCompetition && !highSuccess) return "#8b0000";
-  return "#d2691e";
+  if (!highCompetition && highSuccess) return "#2e8b57"; // Green: Opportunity
+  if (highCompetition && highSuccess) return "#4682b4"; // Blue: Healthy
+  if (highCompetition && !highSuccess) return "#8b0000"; // Red: Saturated
+  return "#d2691e"; // Orange: Emerging
 }
 
 function TaskTooltip({

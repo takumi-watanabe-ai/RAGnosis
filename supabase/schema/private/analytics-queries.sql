@@ -12,7 +12,7 @@ RETURNS TABLE (
 BEGIN
   RETURN QUERY
   SELECT
-    COALESCE(task, 'unknown') as category,
+    COALESCE(task, 'Other') as category,
     COUNT(*) as count,
     SUM(downloads)::BIGINT as total_downloads,
     ROUND(AVG(likes), 2) as avg_likes

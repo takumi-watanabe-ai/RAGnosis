@@ -26,9 +26,15 @@ interface KeywordSummary {
 
 interface TrendsChartProps {
   trendsData: TrendsTimeSeries[];
+  isTouchDevice?: boolean;
+  maxTableRows?: number;
 }
 
-export function TrendsChart({ trendsData }: TrendsChartProps) {
+export function TrendsChart({
+  trendsData,
+  isTouchDevice = false,
+  maxTableRows,
+}: TrendsChartProps) {
   const leftMargin = useResponsiveMargin();
   const rightMargin = useResponsiveRightMargin();
   const yOffset = useResponsiveYOffset();
@@ -84,10 +90,12 @@ export function TrendsChart({ trendsData }: TrendsChartProps) {
               },
             }}
           />
-          <Tooltip
-            content={<MultiLineTrendsTooltip />}
-            cursor={{ stroke: "#666666", strokeDasharray: "3 3" }}
-          />
+          {!isTouchDevice && (
+            <Tooltip
+              content={<MultiLineTrendsTooltip />}
+              cursor={{ stroke: "#666666", strokeDasharray: "3 3" }}
+            />
+          )}
           {keywords.map((keyword, idx) => (
             <Line
               key={keyword}
@@ -128,59 +136,68 @@ export function TrendsChart({ trendsData }: TrendsChartProps) {
             </tr>
           </thead>
           <tbody>
-            {summaries.map((summary) => (
-              <tr
-                key={summary.keyword}
-                className="border-b border-stone-border/50 hover:bg-stone-border/10"
-              >
-                <td className="p-3 text-xs text-charcoal font-medium">
-                  #{summary.currentRank}
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 flex-shrink-0"
-                      style={{ backgroundColor: summary.color }}
-                    />
-                    <span className="text-xs text-charcoal font-light">
-                      {summary.keyword}
-                    </span>
-                  </div>
-                </td>
-                <td className="p-3 text-xs text-charcoal font-medium text-right">
-                  {summary.currentInterest}
-                </td>
-                <td className="p-3 text-xs text-stone font-light text-right">
-                  {summary.average}
-                </td>
-                <td className="p-3 text-xs text-stone font-light text-right">
-                  {summary.highest}
-                </td>
-                <td className="p-3 text-center">
-                  {summary.rankChange === "up" && (
-                    <span className="text-xs text-green-700">↑</span>
-                  )}
-                  {summary.rankChange === "down" && (
-                    <span className="text-xs text-red-700">↓</span>
-                  )}
-                  {summary.rankChange === "same" && (
-                    <span className="text-xs text-stone">−</span>
-                  )}
-                  {summary.rankChange === "new" && (
-                    <span className="text-xs text-blue-700">NEW</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {(maxTableRows ? summaries.slice(0, maxTableRows) : summaries).map(
+              (summary) => (
+                <tr
+                  key={summary.keyword}
+                  className="border-b border-stone-border/50 hover:bg-stone-border/10"
+                >
+                  <td className="p-3 text-xs text-charcoal font-medium">
+                    #{summary.currentRank}
+                  </td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-3 h-3 flex-shrink-0"
+                        style={{ backgroundColor: summary.color }}
+                      />
+                      <span className="text-xs text-charcoal font-light">
+                        {summary.keyword}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="p-3 text-xs text-charcoal font-medium text-right">
+                    {summary.currentInterest}
+                  </td>
+                  <td className="p-3 text-xs text-stone font-light text-right">
+                    {summary.average}
+                  </td>
+                  <td className="p-3 text-xs text-stone font-light text-right">
+                    {summary.highest}
+                  </td>
+                  <td className="p-3 text-center">
+                    {summary.rankChange === "up" && (
+                      <span className="text-xs text-green-700">↑</span>
+                    )}
+                    {summary.rankChange === "down" && (
+                      <span className="text-xs text-red-700">↓</span>
+                    )}
+                    {summary.rankChange === "same" && (
+                      <span className="text-xs text-stone">−</span>
+                    )}
+                    {summary.rankChange === "new" && (
+                      <span className="text-xs text-blue-700">NEW</span>
+                    )}
+                  </td>
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       </div>
 
       <div className="mt-4 p-4 border border-stone-border bg-white">
-        <div className="text-xs text-charcoal font-light leading-relaxed">
-          <span className="font-medium">Insight:</span> Rankings based on latest
-          search interest. Trend arrows show ranking change vs. previous day (↑
-          up, ↓ down, − same).
+        <div className="text-xs text-charcoal font-light leading-relaxed space-y-2">
+          <p>
+            <span className="font-medium">Insight:</span> Rankings based on
+            latest search interest. Trend arrows show interest change vs.
+            previous period (↑ increased, ↓ decreased, − unchanged).
+          </p>
+          <p className="text-stone">
+            <span className="font-medium">Note:</span> Each keyword is
+            normalized to its own 0-100 scale (100 = peak for that keyword).
+            Keywords are not directly comparable in absolute search volume.
+          </p>
         </div>
       </div>
     </>
@@ -223,6 +240,7 @@ function prepareTrendsChartData(trendsData: TrendsTimeSeries[]) {
   );
 
   const latestDate = dates[dates.length - 1];
+  // Compare against previous data point (week-over-week for weekly data)
   const previousDate = dates.length > 1 ? dates[dates.length - 2] : null;
 
   const summaries: KeywordSummary[] = keywords.map((keyword, idx) => {
@@ -254,26 +272,17 @@ function prepareTrendsChartData(trendsData: TrendsTimeSeries[]) {
   });
 
   if (previousDate) {
-    const previousRankings = keywords
-      .map((keyword) => {
-        const prevInterest =
-          trendsData.find(
-            (t) => t.date === previousDate && t.keyword === keyword,
-          )?.interest || 0;
-        return { keyword, interest: prevInterest };
-      })
-      .sort((a, b) => b.interest - a.interest)
-      .map((s, idx) => ({ keyword: s.keyword, rank: idx + 1 }));
-
     summaries.forEach((summary) => {
-      const prevRank = previousRankings.find(
-        (p) => p.keyword === summary.keyword,
-      )?.rank;
-      if (prevRank === undefined) {
+      const prevInterest =
+        trendsData.find(
+          (t) => t.date === previousDate && t.keyword === summary.keyword,
+        )?.interest || 0;
+
+      if (prevInterest === 0) {
         summary.rankChange = "new";
-      } else if (summary.currentRank < prevRank) {
+      } else if (summary.currentInterest > prevInterest) {
         summary.rankChange = "up";
-      } else if (summary.currentRank > prevRank) {
+      } else if (summary.currentInterest < prevInterest) {
         summary.rankChange = "down";
       } else {
         summary.rankChange = "same";
@@ -305,7 +314,7 @@ function MultiLineTrendsTooltip({
         <div className="text-xs text-charcoal uppercase tracking-wide mb-2 font-medium">
           {date ? new Date(date).toLocaleDateString() : ""}
         </div>
-        <div className="text-xs text-stone font-light space-y-1 max-h-48 overflow-y-auto">
+        <div className="text-xs text-stone font-light space-y-1">
           {payload
             .filter((p) => p.dataKey !== "date")
             .sort((a, b) => (b.value || 0) - (a.value || 0))

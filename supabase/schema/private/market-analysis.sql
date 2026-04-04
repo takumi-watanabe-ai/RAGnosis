@@ -2,13 +2,14 @@
 
 -- Category-based functions now use 'task' field instead of deprecated 'rag_category'
 
--- Get language-task matrix (replaces language-category)
+-- Get language-topic matrix
+DROP FUNCTION IF EXISTS private.get_language_topic_matrix_internal();
 DROP FUNCTION IF EXISTS private.get_language_category_matrix_internal();
 
-CREATE OR REPLACE FUNCTION private.get_language_category_matrix_internal()
+CREATE OR REPLACE FUNCTION private.get_language_topic_matrix_internal()
 RETURNS TABLE (
   language TEXT,
-  category TEXT,
+  topic TEXT,
   repo_count BIGINT,
   total_stars BIGINT
 ) AS $$
@@ -40,16 +41,16 @@ BEGIN
     WHERE r.language IN (SELECT lang FROM top_languages)
       AND r.topics IS NOT NULL
   ),
-  -- Aggregate and rank categories per language
-  lang_category_stats AS (
+  -- Aggregate and rank topics per language
+  lang_topic_stats AS (
     SELECT
       rt.lang as language,
-      rt.topic as category,
+      rt.topic as topic,
       COUNT(*)::BIGINT as repo_count,
       SUM(rt.stars)::BIGINT as total_stars,
-      ROW_NUMBER() OVER (PARTITION BY rt.lang ORDER BY SUM(rt.stars) DESC) as category_rank
+      ROW_NUMBER() OVER (PARTITION BY rt.lang ORDER BY SUM(rt.stars) DESC) as topic_rank
     FROM repo_topics rt
-    WHERE LOWER(rt.topic) != LOWER(rt.lang)  -- Don't show "python" as category for Python language
+    WHERE LOWER(rt.topic) != LOWER(rt.lang)  -- Don't show "python" as topic for Python language
     GROUP BY rt.lang, rt.topic
   ),
   -- Get language totals for ordering
@@ -59,16 +60,16 @@ BEGIN
       tl.total_stars as lang_total_stars
     FROM top_languages tl
   )
-  -- Select top 8 categories per language, ordered by language importance
+  -- Select top 20 topics per language, ordered by language importance
   SELECT
-    lcs.language,
-    lcs.category,
-    lcs.repo_count,
-    lcs.total_stars
-  FROM lang_category_stats lcs
-  JOIN lang_totals lt ON lcs.language = lt.lang
-  WHERE lcs.category_rank <= 8  -- Limit to top 8 categories per language
-  ORDER BY lt.lang_total_stars DESC, lcs.category_rank;
+    lts.language,
+    lts.topic,
+    lts.repo_count,
+    lts.total_stars
+  FROM lang_topic_stats lts
+  JOIN lang_totals lt ON lts.language = lt.lang
+  WHERE lts.topic_rank <= 20  -- Limit to top 20 topics per language
+  ORDER BY lt.lang_total_stars DESC, lts.topic_rank;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -142,44 +143,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 
--- Get author concentration
-DROP FUNCTION IF EXISTS private.get_author_concentration_internal();
-
-CREATE OR REPLACE FUNCTION private.get_author_concentration_internal()
-RETURNS TABLE (
-  author TEXT,
-  model_count BIGINT,
-  total_downloads BIGINT,
-  market_share NUMERIC,
-  categories TEXT[]
-) AS $$
-BEGIN
-  RETURN QUERY
-  WITH author_stats AS (
-    SELECT
-      m.author,
-      COUNT(*) as models,
-      SUM(m.downloads)::BIGINT as downloads,
-      array_agg(DISTINCT COALESCE(m.task, 'unknown') ORDER BY COALESCE(m.task, 'unknown')) as tasks
-    FROM hf_models m
-    GROUP BY m.author
-  ),
-  total AS (
-    SELECT SUM(h.downloads)::NUMERIC as total_downloads
-    FROM hf_models h
-  )
-  SELECT
-    a.author,
-    a.models as model_count,
-    a.downloads as total_downloads,
-    ROUND((a.downloads::NUMERIC / NULLIF(t.total_downloads, 0)) * 100, 2) as market_share,
-    a.tasks as categories
-  FROM author_stats a
-  CROSS JOIN total t
-  ORDER BY a.downloads DESC
-  LIMIT 20;
-END;
-$$ LANGUAGE plpgsql;
 
 -- Get tag distribution and gaps with multi-dimensional analysis
 DROP FUNCTION IF EXISTS private.get_task_analysis_internal();
@@ -297,7 +260,8 @@ RETURNS TABLE (
   category TEXT,
   downloads BIGINT,
   likes INT,
-  quality_ratio NUMERIC,
+  last_updated TIMESTAMPTZ,
+  days_since_update INT,
   ranking_position INT,
   market_share NUMERIC
 ) AS $$
@@ -306,29 +270,165 @@ BEGIN
   WITH total_downloads AS (
     SELECT SUM(h.downloads)::NUMERIC as total
     FROM hf_models h
+  ),
+  -- All models with minimum downloads (no time filter to show full age spectrum)
+  active_models AS (
+    SELECT
+      m.model_name,
+      m.author,
+      COALESCE(m.task, 'other') as category,
+      m.downloads,
+      m.likes,
+      m.last_updated,
+      EXTRACT(DAY FROM NOW() - m.last_updated)::INT as days_since_update,
+      m.ranking_position
+    FROM hf_models m
+    WHERE m.downloads >= 1000
+      AND m.last_updated IS NOT NULL  -- Only need valid date
+  ),
+  -- Top 25 per category (ensures all competitive landscapes are shown)
+  top_per_category AS (
+    SELECT
+      am.model_name,
+      am.author,
+      am.category,
+      am.downloads,
+      am.likes,
+      am.last_updated,
+      am.days_since_update,
+      am.ranking_position,
+      ROW_NUMBER() OVER (PARTITION BY am.category ORDER BY am.downloads DESC) as cat_rank
+    FROM active_models am
+  ),
+  -- Rising stars: new projects (<90 days) with >100K downloads
+  rising_stars AS (
+    SELECT
+      m.model_name,
+      m.author,
+      COALESCE(m.task, 'other') as category,
+      m.downloads,
+      m.likes,
+      m.last_updated,
+      EXTRACT(DAY FROM NOW() - m.last_updated)::INT as days_since_update,
+      m.ranking_position
+    FROM hf_models m
+    WHERE m.downloads >= 100000
+      AND m.last_updated IS NOT NULL
+      AND m.last_updated >= NOW() - INTERVAL '90 days'
+  ),
+  -- Combine top per category + rising stars (deduplicated)
+  combined AS (
+    SELECT
+      tpc.model_name, tpc.author, tpc.category, tpc.downloads, tpc.likes,
+      tpc.last_updated, tpc.days_since_update, tpc.ranking_position, tpc.cat_rank
+    FROM top_per_category tpc
+    WHERE tpc.cat_rank <= 25
+    UNION
+    SELECT
+      rs.model_name, rs.author, rs.category, rs.downloads, rs.likes,
+      rs.last_updated, rs.days_since_update, rs.ranking_position, 0 as cat_rank
+    FROM rising_stars rs
   )
-  SELECT
-    m.model_name,
-    m.author,
-    COALESCE(m.task, 'other') as category,
-    m.downloads,
-    m.likes,
-    CASE
-      WHEN m.downloads > 0 AND m.likes > 0
-      THEN ROUND(LN(m.likes::NUMERIC + 1) / LN(m.downloads::NUMERIC + 1) * 100, 2)
-      ELSE 0
-    END as quality_ratio,
-    m.ranking_position,
+  SELECT DISTINCT ON (c.model_name)
+    c.model_name,
+    c.author,
+    c.category,
+    c.downloads,
+    c.likes,
+    c.last_updated,
+    c.days_since_update,
+    c.ranking_position,
     CASE
       WHEN t.total > 0
-      THEN ROUND((m.downloads::NUMERIC / t.total) * 100, 2)
+      THEN ROUND((c.downloads::NUMERIC / t.total) * 100, 2)
       ELSE 0
     END as market_share
-  FROM hf_models m
+  FROM combined c
   CROSS JOIN total_downloads t
-  WHERE m.downloads >= 1000  -- Filter out very low download models
-  ORDER BY m.downloads DESC
-  LIMIT 100;
+  ORDER BY c.model_name, c.downloads DESC
+  LIMIT 200;  -- Cap at 200 total to prevent chart clutter
+END;
+$$ LANGUAGE plpgsql;
+
+-- Get repo competitive positioning (stars vs recency)
+DROP FUNCTION IF EXISTS private.get_repo_competitive_position_internal();
+
+CREATE OR REPLACE FUNCTION private.get_repo_competitive_position_internal()
+RETURNS TABLE (
+  repo_name TEXT,
+  owner TEXT,
+  category TEXT,
+  stars INT,
+  forks INT,
+  updated_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ,
+  months_old INT,
+  ranking_position INT,
+  market_share NUMERIC
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH total_stars AS (
+    SELECT SUM(r.stars)::NUMERIC as total
+    FROM github_repos r
+  ),
+  -- All repos with minimum stars (no time filter to show full age spectrum)
+  active_repos AS (
+    SELECT
+      r.repo_name,
+      r.owner,
+      COALESCE(
+        CASE
+          WHEN r.topics IS NOT NULL AND array_length(r.topics, 1) > 0
+          THEN r.topics[1]
+          ELSE 'other'
+        END,
+        'other'
+      ) as category,
+      r.stars,
+      r.forks,
+      r.updated_at,
+      r.created_at,
+      ROUND(EXTRACT(EPOCH FROM (NOW() - r.created_at)) / (30.44 * 24 * 3600))::INT as months_old,
+      r.ranking_position
+    FROM github_repos r
+    WHERE r.stars >= 100
+      AND r.created_at IS NOT NULL  -- Need valid creation date
+  ),
+  -- Top 30 per category (power law distribution across all ages)
+  top_per_category AS (
+    SELECT
+      ar.repo_name,
+      ar.owner,
+      ar.category,
+      ar.stars,
+      ar.forks,
+      ar.updated_at,
+      ar.created_at,
+      ar.months_old,
+      ar.ranking_position,
+      ROW_NUMBER() OVER (PARTITION BY ar.category ORDER BY ar.stars DESC) as cat_rank
+    FROM active_repos ar
+  )
+  SELECT
+    tpc.repo_name,
+    tpc.owner,
+    tpc.category,
+    tpc.stars,
+    tpc.forks,
+    tpc.updated_at,
+    tpc.created_at,
+    tpc.months_old,
+    tpc.ranking_position,
+    CASE
+      WHEN t.total > 0
+      THEN ROUND((tpc.stars::NUMERIC / t.total) * 100, 2)
+      ELSE 0
+    END as market_share
+  FROM top_per_category tpc
+  CROSS JOIN total_stars t
+  WHERE tpc.cat_rank <= 30  -- Top 30 per category
+  ORDER BY tpc.stars DESC;
 END;
 $$ LANGUAGE plpgsql;
 

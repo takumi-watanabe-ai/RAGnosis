@@ -5,7 +5,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 import type { SearchResult } from '../types.ts'
-import { CrossEncoderReranker } from '../reranker.ts'
+import { createReranker } from '../reranker.ts'
 
 // Supabase.ai is globally available in edge runtime
 declare const Supabase: any
@@ -23,18 +23,23 @@ export interface SearchFilters {
   category?: string
   author?: string
   owner?: string
+  doc_type_weights?: {
+    knowledge_base: number
+    hf_model: number
+    github_repo: number
+  }
 }
 
 export class HybridSearch {
   private aiSession: any = null
-  private reranker: CrossEncoderReranker
+  private reranker: ReturnType<typeof createReranker>
 
   constructor(
     private supabase: ReturnType<typeof createClient>,
     private config: SearchConfig,
     private embeddingModel: string
   ) {
-    this.reranker = new CrossEncoderReranker()
+    this.reranker = createReranker(embeddingModel)
   }
 
   /**
@@ -60,8 +65,7 @@ export class HybridSearch {
     console.log(`📊 Text search: ${textResults.length} results`)
 
     // Merge with Reciprocal Rank Fusion (RRF)
-    // const merged = this.mergeWithRRF(vectorResults, textResults, this.config.candidateCount * 2)
-    const merged = this.mergeWithRRF(vectorResults, textResults, this.config.candidateCount * 2)
+    const merged = this.mergeWithRRF(vectorResults, textResults, this.config.candidateCount * 2, filters)
     console.log(`📊 Merged: ${merged.length} unique results`)
 
     // Rerank merged results using semantic similarity
@@ -156,11 +160,13 @@ export class HybridSearch {
    * Merge results using weighted Reciprocal Rank Fusion (RRF)
    * Weights: 70% vector (semantic), 30% BM25 (keyword) - optimized for balanced retrieval
    * RRF formula: score(d) = sum(weight * 1 / (k + rank(d))) for each ranking
+   * Then applies doc_type_weights if provided by LLM planner
    */
   private mergeWithRRF(
     vectorResults: SearchResult[],
     textResults: SearchResult[],
-    limit: number
+    limit: number,
+    filters?: SearchFilters
   ): SearchResult[] {
     const k = 60  // RRF constant (typical value)
     const vectorWeight = 0.7  // 70% weight for semantic search
@@ -195,6 +201,16 @@ export class HybridSearch {
         value.score *= this.config.structuredDataBoost
       }
     })
+
+    // Apply LLM-based doc_type weights if provided
+    if (filters?.doc_type_weights) {
+      console.log('🎯 Applying LLM doc_type weights:', filters.doc_type_weights)
+      scores.forEach((value) => {
+        const docType = value.result.doc_type
+        const weight = filters.doc_type_weights![docType] || 0.5
+        value.score *= weight
+      })
+    }
 
     // Sort by RRF score and deduplicate by URL
     const sorted = Array.from(scores.values())

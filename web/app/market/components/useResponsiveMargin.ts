@@ -14,7 +14,7 @@ export function useResponsiveMargin() {
       } else if (width >= 768) {
         setLeftMargin(15);
       } else {
-        setLeftMargin(15);
+        setLeftMargin(0);
       }
     }
 

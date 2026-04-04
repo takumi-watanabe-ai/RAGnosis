@@ -96,7 +96,12 @@ serve(async (req) => {
     console.log(
       `📊 Answer quality: ${evaluation.score}/100 (${evaluation.confidence})`,
     );
-    console.log(`📊 Answer issues: ${evaluation.issues}`);
+
+    if (evaluation.issues && evaluation.issues.length > 0) {
+      console.log(`📊 Answer issues: ${evaluation.issues.join(', ')}`);
+    } else {
+      console.log(`📊 Answer issues: None - answer meets quality standards`);
+    }
 
     // Format sources for response
     const sources = results.map((r, i) => {
