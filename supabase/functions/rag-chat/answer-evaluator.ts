@@ -3,7 +3,8 @@
  * Zero-cost monitoring without LLM calls
  */
 
-import { THRESHOLDS } from './utils/constants.ts'
+import { THRESHOLDS, LOG_PREFIX } from './utils/constants.ts'
+import { getFeatureFlagService } from './services/feature-flags.ts'
 
 export interface EvaluationResult {
   score: number  // 0-100
@@ -15,12 +16,22 @@ export interface EvaluationResult {
 /**
  * Evaluate answer quality using fast heuristics
  * No LLM calls - instant evaluation for monitoring
+ * Returns null if evaluator is disabled
  */
 export async function evaluateAnswer(
   question: string,
   answer: string,
-  sourcesUsed: number
-): Promise<EvaluationResult> {
+  sourcesUsed: number,
+  supabase: any
+): Promise<EvaluationResult | null> {
+  try {
+    // Check if answer evaluator is enabled (from database)
+    const featureFlags = getFeatureFlagService(supabase)
+    const isEnabled = await featureFlags.isEnabled('answer_evaluator')
+
+    if (!isEnabled) {
+      return null
+    }
   const issues: string[] = []
   let score = 100
 
@@ -102,5 +113,9 @@ export async function evaluateAnswer(
     confidence,
     issues: issues.length > 0 ? issues : ['None - answer meets quality standards'],
     shouldIterate: false  // Iteration not implemented yet
+  }
+  } catch (error) {
+    console.error(`${LOG_PREFIX.ERROR} Answer evaluation error:`, error)
+    return null
   }
 }

@@ -106,6 +106,11 @@ export async function executeDataSource(
         console.log(`${LOG_PREFIX.PLAN} Using LLM-guided doc_type weights:`, filters.doc_type_weights)
       }
 
+      if ((query.params as any)?.nouns) {
+        filters.nouns = (query.params as any).nouns
+        console.log(`${LOG_PREFIX.PLAN} Using extracted nouns for BM25 boosting:`, filters.nouns)
+      }
+
       // Query expansion if enabled (from database)
       const featureFlags = getFeatureFlagService(supabase)
       const expansionEnabled = await featureFlags.isEnabled('query_expansion')

@@ -93,11 +93,13 @@ serve(async (req) => {
     const answer = await generateAnswer(query, results, plan.intent, supabase);
 
     // Step 4: Evaluate answer quality (fast heuristics, no LLM call)
-    const evaluation = await evaluateAnswer(query, answer, results.length);
-    console.log(
-      `${LOG_PREFIX.METRICS} Answer quality: ${evaluation.score}/100 (${evaluation.confidence})`,
-    );
-    console.log(`${LOG_PREFIX.METRICS} Issues: ${evaluation.issues.join(', ')}`);
+    const evaluation = await evaluateAnswer(query, answer, results.length, supabase);
+    if (evaluation) {
+      console.log(
+        `${LOG_PREFIX.METRICS} Answer quality: ${evaluation.score}/100 (${evaluation.confidence})`,
+      );
+      console.log(`${LOG_PREFIX.METRICS} Issues: ${evaluation.issues.join(', ')}`);
+    }
 
     // Format sources for response
     const sources = results.map((r, i) => {

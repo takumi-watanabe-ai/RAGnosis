@@ -9,8 +9,7 @@ DROP FUNCTION IF EXISTS public.vector_search_documents(vector(384), integer, tex
 CREATE OR REPLACE FUNCTION public.vector_search_documents(
     query_embedding vector(384),
     match_limit INTEGER DEFAULT 10,
-    filter_doc_type TEXT DEFAULT NULL,
-    filter_tags TEXT[] DEFAULT NULL
+    filter_doc_type TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -32,12 +31,11 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'error', 'filter_doc_type must be hf_model, github_repo, or knowledge_base');
     END IF;
 
-    -- Call private function with tag filtering
+    -- Call private function
     v_result := private.search_documents(
         query_embedding,
         match_limit,
-        filter_doc_type,
-        filter_tags
+        filter_doc_type
     );
 
     RETURN jsonb_build_object(
@@ -45,8 +43,7 @@ BEGIN
         'data', jsonb_build_object(
             'results', v_result,
             'count', jsonb_array_length(v_result),
-            'search_type', 'vector',
-            'filter_tags', filter_tags
+            'search_type', 'vector'
         )
     );
 END;
@@ -68,7 +65,8 @@ CREATE OR REPLACE FUNCTION public.text_search_documents(
     search_query TEXT,
     match_limit INTEGER DEFAULT 10,
     filter_doc_type TEXT DEFAULT NULL,
-    filter_tags TEXT[] DEFAULT NULL
+    filter_tags TEXT[] DEFAULT NULL,
+    filter_nouns TEXT[] DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -90,12 +88,13 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'error', 'filter_doc_type must be hf_model, github_repo, or knowledge_base');
     END IF;
 
-    -- Call private function with tag filtering
+    -- Call private function with tag and noun filtering
     v_result := private.text_search_documents(
         search_query,
         match_limit,
         filter_doc_type,
-        filter_tags
+        filter_tags,
+        filter_nouns
     );
 
     RETURN jsonb_build_object(
@@ -104,7 +103,8 @@ BEGIN
             'results', v_result,
             'count', jsonb_array_length(v_result),
             'search_type', 'text',
-            'filter_tags', filter_tags
+            'filter_tags', filter_tags,
+            'filter_nouns', filter_nouns
         )
     );
 END;
@@ -124,8 +124,7 @@ DROP FUNCTION IF EXISTS public.match_documents(vector(384), integer, text, text[
 CREATE OR REPLACE FUNCTION public.match_documents(
     query_embedding vector(384),
     match_count INT DEFAULT 5,
-    filter_doc_type TEXT DEFAULT NULL,
-    filter_tags TEXT[] DEFAULT NULL
+    filter_doc_type TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     id TEXT,
@@ -156,8 +155,7 @@ BEGIN
     SELECT * FROM private.match_documents(
         query_embedding,
         match_count,
-        filter_doc_type,
-        filter_tags
+        filter_doc_type
     );
 END;
 $$;

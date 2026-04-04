@@ -103,8 +103,8 @@ export interface QueryFilters {
 export interface QueryInsight {
   primary_intent: PrimaryIntent
   doc_type_weights: DocTypeWeights
-  filters?: QueryFilters
   expanded_query?: string
+  nouns?: string[]  // Key nouns/entities for BM25 boosting
   confidence: number
   reason: string
 }

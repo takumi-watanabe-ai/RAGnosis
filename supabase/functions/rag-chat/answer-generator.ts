@@ -6,9 +6,7 @@
 import type { SearchResult, QueryIntent } from "./types.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { config } from "./config.ts";
-import { verifyAnswer } from "./answer-verifier.ts";
 import { getLLMClient } from "./services/llm-client.ts";
-import { getFeatureFlagService } from "./services/feature-flags.ts";
 import { PATTERNS, RESPONSE_MESSAGES, LOG_PREFIX } from "./utils/constants.ts";
 import { cleanPartSuffix, markdownLink, truncate } from "./utils/formatters.ts";
 
@@ -34,32 +32,7 @@ export async function generateAnswer(
 
   try {
     const llmClient = getLLMClient();
-    let answer = await llmClient.generate(prompt);
-
-    // Answer verification if enabled (from database)
-    if (supabase) {
-      const featureFlags = getFeatureFlagService(supabase);
-      const verificationEnabled = await featureFlags.isEnabled('answer_verification');
-
-      if (verificationEnabled) {
-        const verification = await verifyAnswer(answer, results);
-
-      // Only use verified answer if faithfulness is acceptable
-      if (
-        verification.faithfulnessScore >=
-        config.features.answerVerification.minFaithfulness
-      ) {
-        answer = verification.verifiedAnswer;
-        console.log(
-          `${LOG_PREFIX.SUCCESS} Using verified answer (faithfulness: ${verification.faithfulnessScore.toFixed(2)})`,
-        );
-      } else {
-        console.log(
-          `${LOG_PREFIX.WARNING} Verification faithfulness too low (${verification.faithfulnessScore.toFixed(2)}), using original`,
-        );
-      }
-      }
-    }
+    const answer = await llmClient.generate(prompt);
 
     return answer;
   } catch (error) {
@@ -294,13 +267,32 @@ Requirements:
     case "comparison":
       return `${baseRules}
 
-ANSWER APPROACH:
-- FIRST: Directly state the key differences
-- Then elaborate with details from sources
+COMPARISON FORMAT - Follow this EXACT structure:
 
-Requirements:
-- Compare using only features/use cases from sources
-- Use table for 3+ items, bullets for 2 items`;
+Start with an opening sentence stating the core difference
+
+## Key Differences
+
+**Feature Category 1:**
+- **Item A**: [description from sources]
+- **Item B**: [description from sources]
+
+**Feature Category 2:**
+- **Item A**: [description from sources]
+- **Item B**: [description from sources]
+
+## When to Choose
+
+- **Item A**: [use cases from sources]
+- **Item B**: [use cases from sources]
+
+CRITICAL RULES:
+1. Start with ONE sentence summarizing the main difference
+2. Group by FEATURE (not by product), then compare both items under each feature
+3. Use bullet points (-) ONLY, NO numbered lists (1. 2. 3.)
+4. Keep it concise - compare 3-5 key features maximum
+5. ONLY use information explicitly stated in the sources
+6. Compare the SAME aspects for both items (e.g., if you mention "deployment" for one, mention it for the other)`;
 
     case "conceptual":
     default:

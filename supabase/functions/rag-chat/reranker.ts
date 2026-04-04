@@ -11,9 +11,9 @@ import { config } from './config.ts'
 declare const Supabase: any
 
 /**
- * Score fusion reranker - combines existing scores
+ * Pass-through reranker - uses RRF scores directly without reranking
  */
-export class ScoreFusionReranker {
+export class PassThroughReranker {
   async rerank(
     query: string,
     results: SearchResult[],
@@ -21,36 +21,18 @@ export class ScoreFusionReranker {
   ): Promise<SearchResult[]> {
     if (results.length === 0) return results
 
-    console.log(`🔀 Reranking ${results.length} results with score fusion...`)
+    console.log(`📊 Using RRF scores directly`)
 
-    const { vectorWeight, bm25Weight } = config.search.reranker.fusion
+    // Results already have rerank_score from RRF merge
+    // Just return top K (already sorted from RRF)
+    const top = results.slice(0, topK)
 
-    // Combine vector similarity + BM25 scores
-    const scored = results.map(result => {
-      let score = (result.vector_similarity || 0) * vectorWeight
-
-      if (result.bm25_rank) {
-        score += result.bm25_rank * bm25Weight
-      }
-
-      return {
-        ...result,
-        rerank_score: score,
-        similarity: score
-      }
-    })
-
-    // Sort by combined score and return top K
-    const reranked = scored
-      .sort((a, b) => (b.rerank_score || 0) - (a.rerank_score || 0))
-      .slice(0, topK)
-
-    console.log(`✅ Score fusion complete, returning top ${reranked.length}`)
-    if (reranked.length > 0) {
-      console.log(`   Top result: "${reranked[0].name.substring(0, 60)}..." (score: ${reranked[0].rerank_score?.toFixed(2)})`)
+    console.log(`✅ Returning top ${top.length} from RRF`)
+    if (top.length > 0) {
+      console.log(`   Top result: "${top[0].name.substring(0, 60)}..." (score: ${top[0].rerank_score?.toFixed(4)})`)
     }
 
-    return reranked
+    return top
   }
 }
 
@@ -60,13 +42,17 @@ export class ScoreFusionReranker {
  * 1. Embedding query alone
  * 2. Embedding query + document together
  * 3. Comparing the combined embedding to measure relevance
+ *
+ * Optimization: Only reranks top candidates to reduce CPU load
  */
 export class CrossEncoderReranker {
   private aiSession: any = null
   private embeddingModel: string
+  private maxCandidates: number
 
-  constructor(embeddingModel: string = 'gte-small') {
+  constructor(embeddingModel: string = 'gte-small', maxCandidates: number = 50) {
     this.embeddingModel = embeddingModel
+    this.maxCandidates = maxCandidates
   }
 
   async rerank(
@@ -76,7 +62,9 @@ export class CrossEncoderReranker {
   ): Promise<SearchResult[]> {
     if (results.length === 0) return results
 
-    console.log(`🔀 Reranking ${results.length} results with cross-encoder (gte-small)...`)
+    // Limit candidates to reduce CPU load
+    const candidates = results.slice(0, this.maxCandidates)
+    console.log(`🔀 Cross-encoder reranking top ${candidates.length} candidates (max: ${this.maxCandidates})...`)
 
     try {
       // Initialize AI session if needed
@@ -88,8 +76,8 @@ export class CrossEncoderReranker {
       // Embed query once
       const queryEmbedding = await this.aiSession.run(query, { mean_pool: true, normalize: true })
 
-      // Score each result by embedding query + document together
-      const scoredPromises = results.map(async (result) => {
+      // Score each candidate by embedding query + document together
+      const scoredPromises = candidates.map(async (result) => {
         const docText = this.getDocumentText(result)
 
         // Embed query + document together
@@ -122,9 +110,9 @@ export class CrossEncoderReranker {
       return reranked
 
     } catch (error) {
-      console.error('❌ Cross-encoder reranking failed, falling back to score fusion:', error)
-      // Fallback to simple score fusion
-      const fallback = new ScoreFusionReranker()
+      console.error('❌ Cross-encoder reranking failed, using RRF scores:', error)
+      // Fallback to RRF scores
+      const fallback = new PassThroughReranker()
       return fallback.rerank(query, results, topK)
     }
   }
@@ -170,15 +158,29 @@ export class CrossEncoderReranker {
 }
 
 /**
- * Factory function to create reranker based on config
+ * Factory function to create reranker
+ * Uses feature flag to determine if cross-encoder should be used
  */
 export function createReranker(embeddingModel: string = 'gte-small') {
-  const strategy = config.search.reranker.strategy
+  // Return an object that will check feature flag at runtime
+  return {
+    async rerank(query: string, results: SearchResult[], topK: number, supabase?: any): Promise<SearchResult[]> {
+      // Check feature flag if supabase client provided
+      if (supabase) {
+        const { getFeatureFlagService } = await import('./services/feature-flags.ts')
+        const featureFlags = getFeatureFlagService(supabase)
+        const useCrossEncoder = await featureFlags.isEnabled('cross_encoder_reranking')
 
-  if (strategy === 'cross-encoder') {
-    return new CrossEncoderReranker(embeddingModel)
+        if (useCrossEncoder) {
+          const maxCandidates = config.search.reranker.crossEncoder.maxCandidates || 50
+          const reranker = new CrossEncoderReranker(embeddingModel, maxCandidates)
+          return reranker.rerank(query, results, topK)
+        }
+      }
+
+      // Default: use RRF scores directly (no reranking)
+      const reranker = new PassThroughReranker()
+      return reranker.rerank(query, results, topK)
+    }
   }
-
-  // Default to score fusion
-  return new ScoreFusionReranker()
 }

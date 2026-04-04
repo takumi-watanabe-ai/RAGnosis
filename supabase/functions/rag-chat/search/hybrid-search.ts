@@ -18,11 +18,11 @@ interface SearchConfig {
 }
 
 export interface SearchFilters {
-  tags?: string[]
   doc_type?: 'hf_model' | 'github_repo' | 'knowledge_base'
   category?: string
   author?: string
   owner?: string
+  nouns?: string[]  // Key nouns for BM25 filtering
   doc_type_weights?: {
     knowledge_base: number
     hf_model: number
@@ -51,8 +51,8 @@ export class HybridSearch {
     filters?: SearchFilters
   ): Promise<SearchResult[]> {
     console.log(`🔍 Hybrid search (k-NN + BM25): "${query}"`)
-    if (filters?.tags?.length) {
-      console.log(`🏷️  Filtering by tags:`, filters.tags)
+    if (filters?.nouns?.length) {
+      console.log(`🎯 BM25 noun filtering enabled:`, filters.nouns)
     }
 
     // Run both searches in parallel
@@ -68,8 +68,8 @@ export class HybridSearch {
     const merged = this.mergeWithRRF(vectorResults, textResults, this.config.candidateCount * 2, filters)
     console.log(`📊 Merged: ${merged.length} unique results`)
 
-    // Rerank merged results using semantic similarity
-    const reranked = await this.reranker.rerank(query, merged, this.config.finalResultCount)
+    // Rerank merged results (checks feature flag for cross-encoder)
+    const reranked = await this.reranker.rerank(query, merged, this.config.finalResultCount, this.supabase)
     console.log(`✅ Hybrid search complete: ${reranked.length} results after reranking`)
 
     return reranked
@@ -94,15 +94,12 @@ export class HybridSearch {
       return []
     }
 
-    // Vector search with tag filtering
+    // Vector search params
     const rpcParams = {
       query_embedding: embedding,
       match_count: this.config.candidateCount,
-      filter_doc_type: filters?.doc_type || null,
-      // Don't use tag filtering for knowledge_base - they use sections, semantic search is better
-      filter_tags: filters?.doc_type === 'knowledge_base' ? null : (filters?.tags || null)
+      filter_doc_type: filters?.doc_type || null
     }
-    console.log('🔍 Vector search RPC params (tags only):', { filter_tags: rpcParams.filter_tags })
 
     const { data, error } = await this.supabase.rpc('match_documents', rpcParams)
 
@@ -129,8 +126,7 @@ export class HybridSearch {
       search_query: query,
       match_limit: this.config.candidateCount,
       filter_doc_type: filters?.doc_type || null,
-      // Don't use tag filtering for knowledge_base - they use sections, semantic search is better
-      filter_tags: filters?.doc_type === 'knowledge_base' ? null : (filters?.tags || null)
+      filter_nouns: filters?.nouns || null
     }
     console.log('🔍 Text search RPC params:', JSON.stringify(rpcParams, null, 2))
 
@@ -158,9 +154,10 @@ export class HybridSearch {
 
   /**
    * Merge results using weighted Reciprocal Rank Fusion (RRF)
-   * Weights: 70% vector (semantic), 30% BM25 (keyword) - optimized for balanced retrieval
    * RRF formula: score(d) = sum(weight * 1 / (k + rank(d))) for each ranking
+   * Weights from config: 60% vector (semantic), 40% BM25 (keyword)
    * Then applies doc_type_weights if provided by LLM planner
+   * Note: BM25 results are pre-filtered by nouns at the query level
    */
   private mergeWithRRF(
     vectorResults: SearchResult[],
@@ -173,14 +170,14 @@ export class HybridSearch {
     const keywordWeight = config.search.reranker.fusion.bm25Weight
     const scores = new Map<string, { result: SearchResult; score: number }>()
 
-    // Add vector search scores (70% weight)
+    // Add vector search scores (weighted by config)
     vectorResults.forEach((result, index) => {
       const rank = index + 1
       const score = vectorWeight * (1 / (k + rank))
       scores.set(result.id, { result, score })
     })
 
-    // Add text search scores (30% weight)
+    // Add BM25 text search scores (weighted by config)
     textResults.forEach((result, index) => {
       const rank = index + 1
       const score = keywordWeight * (1 / (k + rank))
@@ -203,7 +200,7 @@ export class HybridSearch {
       })
     }
 
-    // Sort by RRF score and deduplicate by URL
+    // Sort by RRF score
     const sorted = Array.from(scores.values())
       .sort((a, b) => b.score - a.score)
       .map(({ result, score }) => ({
@@ -212,15 +209,25 @@ export class HybridSearch {
         similarity: score
       }))
 
-    // Deduplicate by URL (keep highest score)
-    const urlMap = new Map<string, SearchResult>()
+    // Keep top N chunks per URL (for chunked documents)
+    const maxChunks = config.search.maxChunksPerUrl
+    console.log(`🔗 Keeping up to ${maxChunks} chunks per URL`)
+
+    const urlMap = new Map<string, SearchResult[]>()
     sorted.forEach(r => {
-      if (!urlMap.has(r.url) || (r.rerank_score || 0) > (urlMap.get(r.url)!.rerank_score || 0)) {
-        urlMap.set(r.url, r)
+      if (!urlMap.has(r.url)) {
+        urlMap.set(r.url, [])
+      }
+      const chunks = urlMap.get(r.url)!
+      if (chunks.length < maxChunks) {
+        chunks.push(r)
       }
     })
 
-    return Array.from(urlMap.values()).slice(0, limit)
+    // Flatten back to array, maintaining sort order
+    const deduplicated = Array.from(urlMap.values()).flat()
+
+    return deduplicated.slice(0, limit)
   }
 
   /**

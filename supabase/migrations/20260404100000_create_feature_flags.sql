@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS public.feature_flags (
 -- Enable RLS
 ALTER TABLE public.feature_flags ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Service role can manage feature flags" ON public.feature_flags;
+DROP POLICY IF EXISTS "Authenticated users can read feature flags" ON public.feature_flags;
+
 -- Allow service role to read/write
 CREATE POLICY "Service role can manage feature flags"
   ON public.feature_flags
@@ -28,9 +32,9 @@ CREATE POLICY "Authenticated users can read feature flags"
 
 -- Insert default flags from config.ts
 INSERT INTO public.feature_flags (flag_name, enabled, config, description) VALUES
-  ('query_planner', false, '{"model": "qwen2.5:3b-instruct"}', 'LLM Query Planner - weighted multi-source search with doc_type weights'),
+  ('query_planner', false, '{"model": "qwen2.5:3b-instruct", "use_weights": true}', 'LLM Query Planner - weighted multi-source search with doc_type weights'),
+  ('answer_evaluator', false, '{}', 'Answer quality evaluator - fast heuristic-based quality checking'),
   ('query_expansion', false, '{"max_variations": 2}', 'Generate semantic query variations to improve recall'),
-  ('answer_verification', false, '{"min_faithfulness": 0.7}', 'Validate answer claims against sources'),
   ('cross_encoder_reranking', false, '{"max_chars": 500}', 'Use cross-encoder for reranking instead of score fusion'),
   ('response_caching', false, '{"ttl_seconds": 300, "max_size_mb": 50}', 'Enable response caching to reduce LLM calls')
 ON CONFLICT (flag_name) DO NOTHING;

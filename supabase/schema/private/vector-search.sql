@@ -11,8 +11,7 @@ DROP FUNCTION IF EXISTS private.match_documents(vector(384), integer, text, text
 CREATE OR REPLACE FUNCTION private.match_documents(
     query_embedding vector(384),
     match_count INT,
-    filter_doc_type TEXT DEFAULT NULL,
-    filter_tags TEXT[] DEFAULT NULL
+    filter_doc_type TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     id TEXT,
@@ -67,7 +66,6 @@ BEGIN
     FROM documents
     WHERE
         (filter_doc_type IS NULL OR documents.doc_type = filter_doc_type)
-        AND (filter_tags IS NULL OR documents.topics && filter_tags)  -- Array overlap operator
     ORDER BY documents.embedding <=> query_embedding
     LIMIT match_count;
 END;
@@ -81,8 +79,7 @@ DROP FUNCTION IF EXISTS private.search_documents(vector(384), integer, text);
 CREATE OR REPLACE FUNCTION private.search_documents(
     query_embedding vector(384),
     match_limit INTEGER,
-    filter_doc_type TEXT DEFAULT NULL,
-    filter_tags TEXT[] DEFAULT NULL
+    filter_doc_type TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -118,8 +115,7 @@ BEGIN
     FROM private.match_documents(
         query_embedding,
         match_limit,
-        filter_doc_type,
-        filter_tags
+        filter_doc_type
     ) d;
 
     RETURN COALESCE(v_results, '[]'::JSONB);
@@ -140,7 +136,8 @@ CREATE OR REPLACE FUNCTION private.text_search_documents(
     search_query TEXT,
     match_limit INTEGER,
     filter_doc_type TEXT DEFAULT NULL,
-    filter_tags TEXT[] DEFAULT NULL
+    filter_tags TEXT[] DEFAULT NULL,
+    filter_nouns TEXT[] DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -148,10 +145,19 @@ AS $$
 DECLARE
     v_results JSONB;
     v_tsquery tsquery;
+    v_noun_tsquery tsquery;
 BEGIN
     -- Convert AND query to OR query for more flexible matching
     -- websearch_to_tsquery creates 'word1 & word2' but we want 'word1 | word2'
     v_tsquery := REPLACE(websearch_to_tsquery('english', search_query)::text, ' & ', ' | ')::tsquery;
+
+    -- Build noun filter query if nouns provided (OR'd together)
+    IF filter_nouns IS NOT NULL AND array_length(filter_nouns, 1) > 0 THEN
+        v_noun_tsquery := to_tsquery('english', array_to_string(
+            ARRAY(SELECT word || ':*' FROM unnest(filter_nouns) AS word),
+            ' | '
+        ));
+    END IF;
 
     -- Call text_search_documents function and format results
     SELECT jsonb_agg(
@@ -211,6 +217,13 @@ BEGIN
             ) @@ v_tsquery
             AND (filter_doc_type IS NULL OR documents.doc_type = filter_doc_type)
             AND (filter_tags IS NULL OR documents.topics && filter_tags)
+            AND (
+                filter_nouns IS NULL OR
+                (
+                    to_tsvector('english', coalesce(documents.name, '')) ||
+                    to_tsvector('english', coalesce(documents.description, ''))
+                ) @@ v_noun_tsquery
+            )
         ORDER BY rank DESC
         LIMIT match_limit
     ) d;

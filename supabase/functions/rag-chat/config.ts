@@ -39,6 +39,9 @@ export const config = {
     // Final results to return (regardless of limit param)
     finalResultCount: 20,     // Return top 20 after RRF fusion
 
+    // Multiple chunks per URL (for chunked documents)
+    maxChunksPerUrl: 1,       // Keep up to 3 relevant chunks per URL
+
     // Context sizing (token-optimized)
     context: {
       primaryExcerpt: 400,     // Top 2 sources get full context
@@ -46,19 +49,18 @@ export const config = {
       descriptionMax: 150,     // Description truncation
     },
 
-    // Reranking strategy
+    // Reranking config
     reranker: {
-      strategy: 'fusion',      // 'fusion' | 'cross-encoder'
-
-      // Cross-encoder config (uses gte-small for query+doc embedding)
+      // Cross-encoder config (controlled by 'cross_encoder_reranking' feature flag)
       crossEncoder: {
         maxChars: 500,         // Max chars from doc for cross-encoding
+        maxCandidates: 50,     // Limit candidates to reduce CPU load
       },
 
-      // Score fusion weights
+      // RRF fusion weights (used in hybrid search merge)
       fusion: {
-        vectorWeight: 1.0,    // Multiply vector similarity by this
-        bm25Weight: 1.0,       // Multiply BM25 rank by this
+        vectorWeight: 0.6,    // 60% weight for semantic search
+        bm25Weight: 0.4,      // 40% weight for keyword search (higher due to noun filtering)
       },
     },
   },
@@ -77,19 +79,13 @@ export const config = {
     // When enabled: LLM extracts intent and applies weights to boost relevant doc types
     // When disabled: Simple hybrid search across all doc types (no weights)
     queryPlanner: {
-      enabled: false,           // Default: OFF
+      enabled: true,           // Default: OFF
     },
 
     // Query expansion - generate semantic variations to improve recall
     queryExpansion: {
       enabled: false,          // Default: OFF
       maxVariations: 2,        // Number of query variations to generate
-    },
-
-    // Answer verification - validate answer claims against sources
-    answerVerification: {
-      enabled: false,          // Default: OFF
-      minFaithfulness: 0.7,    // Minimum faithfulness threshold
     },
   },
 

@@ -14,7 +14,6 @@ export interface FeatureFlag {
 export interface FeatureFlags {
   query_planner: FeatureFlag
   query_expansion: FeatureFlag
-  answer_verification: FeatureFlag
   cross_encoder_reranking: FeatureFlag
   response_caching: FeatureFlag
 }
@@ -107,15 +106,11 @@ export class FeatureFlagService {
     return {
       query_planner: {
         enabled: false,
-        config: { model: 'qwen2.5:3b-instruct' }
+        config: { model: 'qwen2.5:3b-instruct', use_weights: true }
       },
       query_expansion: {
         enabled: false,
         config: { max_variations: 2 }
-      },
-      answer_verification: {
-        enabled: false,
-        config: { min_faithfulness: 0.7 }
       },
       cross_encoder_reranking: {
         enabled: false,

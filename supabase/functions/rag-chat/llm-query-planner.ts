@@ -14,9 +14,7 @@ import { THRESHOLDS, WEIGHTS, LOG_PREFIX } from './utils/constants.ts'
 interface LLMInsightResponse {
   primary_intent: PrimaryIntent
   doc_type_weights: DocTypeWeights
-  task?: string | null
-  language?: string | null
-  attributes?: string[] | null
+  nouns?: string[] | null
   expanded_query?: string | null
 }
 
@@ -36,6 +34,10 @@ async function getQueryInsight(
     if (!isEnabled) {
       return null
     }
+
+    // Get planner config to check if weights should be used
+    const plannerConfig = await featureFlags.getConfig<{ model?: string; use_weights?: boolean }>('query_planner')
+    const useWeights = plannerConfig.use_weights !== false  // Default to true
 
     // Fetch minimal metadata from DB
     const { data: meta, error } = await supabase.rpc('get_filter_options')
@@ -62,18 +64,17 @@ async function getQueryInsight(
 
     const insight: QueryInsight = {
       primary_intent: llmResponse.primary_intent,
-      doc_type_weights: weights,
-      filters: {
-        task: llmResponse.task || undefined,
-        language: llmResponse.language || undefined,
-        attributes: llmResponse.attributes || undefined,
-      },
+      doc_type_weights: useWeights ? weights : undefined,  // Only include weights if enabled
+      nouns: llmResponse.nouns || undefined,
       expanded_query: llmResponse.expanded_query || undefined,
       confidence: 0.8,
       reason: `Intent: ${llmResponse.primary_intent}`,
     }
 
     console.log(`${LOG_PREFIX.PLAN} Query Insight:`, JSON.stringify(insight, null, 2))
+    if (!useWeights) {
+      console.log(`${LOG_PREFIX.INFO} Doc type weighting disabled via feature flag config`)
+    }
 
     return insight
 
@@ -98,7 +99,7 @@ Available model tasks: ${availableTasks.join(', ')}
 Your job:
 1. Understand the PRIMARY INTENT
 2. Assign WEIGHTS (0.0-1.0) to each doc_type based on relevance
-3. Extract any filters (task, language, attributes)
+3. Extract KEY NOUNS/ENTITIES for BM25 boosting (3-5 important terms)
 4. Optionally expand the query for better search
 
 Intent types:
@@ -121,6 +122,7 @@ Weight guidelines:
 
 **IMPORTANT**:
 - Always search ALL doc types. Weights determine relevance, not exclusion.
+- Extract 3-5 key nouns/entities that are most important for matching (e.g., ["RAG", "embeddings", "ChromaDB"])
 - Keep response concise - only fill optional fields if clearly relevant.
 
 Respond with VALID JSON only (no trailing text):
@@ -131,9 +133,7 @@ Respond with VALID JSON only (no trailing text):
     "hf_model": 0.0-1.0,
     "github_repo": 0.0-1.0
   },
-  "task": null,
-  "language": null,
-  "attributes": null,
+  "nouns": ["key", "terms", "entities"],
   "expanded_query": null
 }`
 }
@@ -166,7 +166,7 @@ export async function createQueryPlan(
   const intent = insight ? mapPrimaryIntentToQueryIntent(insight.primary_intent) : 'conceptual'
 
   // Always use vector_search_unified (searches all doc types)
-  // Pass doc_type_weights via params if we have insights
+  // Pass doc_type_weights and nouns via params if we have insights
   const dataSource = {
     source: 'vector_search_unified' as const,
     params: {
@@ -174,7 +174,7 @@ export async function createQueryPlan(
       limit: top_k,
       ...(insight && {
         doc_type_weights: insight.doc_type_weights,
-        filters: insight.filters
+        nouns: insight.nouns
       })
     }
   }
