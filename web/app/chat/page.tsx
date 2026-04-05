@@ -14,7 +14,7 @@ function ChatPageContent() {
   const searchParams = useSearchParams();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsConfig>({
-    showSources: true,
+    showSources: false,
     topK: 5,
     temperature: 0.7,
     maxTokens: 500,

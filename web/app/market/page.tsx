@@ -30,6 +30,7 @@ import { LanguageTopicHeatmap } from "./components/LanguageTopicHeatmap";
 import { TechStackPatternsChart } from "./components/TechStackPatternsChart";
 import { RagTechStackSankey } from "./components/RagTechStackSankey";
 import { EcosystemStats } from "@/app/components/EcosystemStats";
+import { MarketSkeleton } from "./components/MarketSkeleton";
 
 export default function MarketAnalyticsPage() {
   const [langMatrix, setLangMatrix] = useState<LanguageTopicMatrix[]>([]);
@@ -96,13 +97,7 @@ export default function MarketAnalyticsPage() {
   }, []);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-cream flex items-center justify-center">
-        <div className="text-charcoal text-sm tracking-wide">
-          Loading market analysis...
-        </div>
-      </div>
-    );
+    return <MarketSkeleton />;
   }
 
   if (error) {

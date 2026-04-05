@@ -237,6 +237,10 @@ function RepoPositionTooltip({
             Age: {data.months_old ?? "Unknown"}{" "}
             {data.months_old === 1 ? "month" : "months"} old
           </div>
+          <div>
+            Last updated: {data.days_since_update ?? "Unknown"}{" "}
+            {data.days_since_update === 1 ? "day" : "days"} ago
+          </div>
           <div>Market Share: {data.market_share.toFixed(2)}%</div>
           <div>Rank: #{data.ranking_position}</div>
         </div>

@@ -363,6 +363,7 @@ RETURNS TABLE (
   updated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ,
   months_old INT,
+  days_since_update INT,
   ranking_position INT,
   market_share NUMERIC
 ) AS $$
@@ -372,7 +373,7 @@ BEGIN
     SELECT SUM(r.stars)::NUMERIC as total
     FROM github_repos r
   ),
-  -- All repos with minimum stars (no time filter to show full age spectrum)
+  -- Active repos: minimum stars + updated in last 60 days
   active_repos AS (
     SELECT
       r.repo_name,
@@ -390,12 +391,15 @@ BEGIN
       r.updated_at,
       r.created_at,
       ROUND(EXTRACT(EPOCH FROM (NOW() - r.created_at)) / (30.44 * 24 * 3600))::INT as months_old,
+      EXTRACT(DAY FROM NOW() - r.updated_at)::INT as days_since_update,
       r.ranking_position
     FROM github_repos r
     WHERE r.stars >= 100
-      AND r.created_at IS NOT NULL  -- Need valid creation date
+      AND r.created_at IS NOT NULL
+      AND r.updated_at IS NOT NULL
+      AND r.updated_at >= NOW() - INTERVAL '60 days'  -- Only repos updated in last 60 days
   ),
-  -- Top 30 per category (power law distribution across all ages)
+  -- Top per category (actively maintained repos only)
   top_per_category AS (
     SELECT
       ar.repo_name,
@@ -406,6 +410,7 @@ BEGIN
       ar.updated_at,
       ar.created_at,
       ar.months_old,
+      ar.days_since_update,
       ar.ranking_position,
       ROW_NUMBER() OVER (PARTITION BY ar.category ORDER BY ar.stars DESC) as cat_rank
     FROM active_repos ar
@@ -419,6 +424,7 @@ BEGIN
     tpc.updated_at,
     tpc.created_at,
     tpc.months_old,
+    tpc.days_since_update,
     tpc.ranking_position,
     CASE
       WHEN t.total > 0

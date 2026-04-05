@@ -44,7 +44,19 @@ export function EcosystemStats() {
   }, []);
 
   if (loading || !overview) {
-    return null;
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-12">
+        {[1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            className="border border-stone-border bg-white p-4 sm:p-6"
+          >
+            <div className="h-4 w-20 bg-stone-border rounded animate-pulse mb-2" />
+            <div className="h-8 w-16 bg-stone-border rounded animate-pulse" />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   return (

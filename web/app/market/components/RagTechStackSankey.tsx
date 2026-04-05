@@ -144,7 +144,7 @@ export function RagTechStackSankey({ flows }: RagTechStackSankeyProps) {
       const columnGap = 60; // Extra spacing between columns
       const columnWidth =
         (availableWidth - columnGap * (numColumns - 1)) / numColumns;
-      const nodeWidth = Math.min(150, Math.max(100, columnWidth * 0.6));
+      const nodeWidth = Math.min(80, Math.max(50, columnWidth * 0.4));
       const nodeSpacing = 5;
 
       // Group nodes by type/column
@@ -453,6 +453,8 @@ export function RagTechStackSankey({ flows }: RagTechStackSankeyProps) {
                     y={node.y}
                     width={nodeWidth}
                     height={node.height}
+                    rx={4}
+                    ry={4}
                     fill={hoveredNode === node.id ? "#525252" : "#737373"}
                     className="transition-colors duration-200"
                   />

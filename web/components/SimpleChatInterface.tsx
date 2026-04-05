@@ -59,6 +59,30 @@ export const SimpleChatInterface = forwardRef<
     scrollToBottom();
   }, [messages]);
 
+  // Auto-expand sources based on settings
+  useEffect(() => {
+    if (settings.showSources) {
+      const newExpanded = new Set(expandedSources);
+      let hasChanges = false;
+
+      messages.forEach((message) => {
+        if (
+          message.role === "assistant" &&
+          message.sources &&
+          message.sources.length > 0 &&
+          !expandedSources.has(message.id)
+        ) {
+          newExpanded.add(message.id);
+          hasChanges = true;
+        }
+      });
+
+      if (hasChanges) {
+        setExpandedSources(newExpanded);
+      }
+    }
+  }, [messages, settings.showSources]);
+
   useEffect(() => {
     if (initialQuestion && !initialQuestionSentRef.current) {
       initialQuestionSentRef.current = true;
@@ -305,32 +329,29 @@ export const SimpleChatInterface = forwardRef<
                     >
                       {copiedId === message.id ? "Copied" : "Copy"}
                     </button>
-                    {settings.showSources &&
-                      message.sources &&
-                      message.sources.length > 0 && (
-                        <button
-                          onClick={() => {
-                            const newExpanded = new Set(expandedSources);
-                            if (newExpanded.has(message.id)) {
-                              newExpanded.delete(message.id);
-                            } else {
-                              newExpanded.add(message.id);
-                            }
-                            setExpandedSources(newExpanded);
-                          }}
-                          className="text-xs text-stone hover:text-charcoal transition-colors uppercase tracking-wider font-normal"
-                        >
-                          {expandedSources.has(message.id)
-                            ? "Hide Sources"
-                            : `Sources (${message.sources.length})`}
-                        </button>
-                      )}
+                    {message.sources && message.sources.length > 0 && (
+                      <button
+                        onClick={() => {
+                          const newExpanded = new Set(expandedSources);
+                          if (newExpanded.has(message.id)) {
+                            newExpanded.delete(message.id);
+                          } else {
+                            newExpanded.add(message.id);
+                          }
+                          setExpandedSources(newExpanded);
+                        }}
+                        className="text-xs text-stone hover:text-charcoal transition-colors uppercase tracking-wider font-normal"
+                      >
+                        {expandedSources.has(message.id)
+                          ? "Hide Sources"
+                          : `Sources (${message.sources.length})`}
+                      </button>
+                    )}
                   </div>
                 )}
 
                 {/* Collapsible Sources */}
-                {settings.showSources &&
-                  message.sources &&
+                {message.sources &&
                   message.sources.length > 0 &&
                   expandedSources.has(message.id) && (
                     <div className="mt-6 pt-6 border-t border-stone-border">

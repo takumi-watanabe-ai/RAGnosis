@@ -27,7 +27,7 @@ interface SettingsProps {
 }
 
 const DEFAULT_SETTINGS: SettingsConfig = {
-  showSources: true,
+  showSources: false,
   topK: 5,
   temperature: 0.7,
   maxTokens: 500,
@@ -81,7 +81,7 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
                   Show Sources
                 </label>
                 <p className="text-sm text-stone mt-1 font-light">
-                  Display source references below responses
+                  Expand sources by default
                 </p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
