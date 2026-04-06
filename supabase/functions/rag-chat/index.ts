@@ -11,11 +11,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { config } from "./config.ts";
 import { createQueryPlan } from "./llm-query-planner.ts";
 import { executeDataSource } from "./data-sources.ts";
-import { generateAnswer } from "./answer-generator.ts";
+import { generateAnswer, generateAnswerStream } from "./answer-generator.ts";
 import { evaluateAnswer } from "./answer-evaluator.ts";
 import type { SearchResult } from "./types.ts";
 import { RESPONSE_MESSAGES, SEPARATOR, LOG_PREFIX } from "./utils/constants.ts";
 import { cleanPartSuffix } from "./utils/formatters.ts";
+import { getResponseCache } from "./services/response-cache.ts";
+import { logger } from "./utils/logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": config.cors.allowOrigin,
@@ -34,7 +36,7 @@ serve(async (req) => {
   }
 
   try {
-    const { query, top_k = 5 } = await req.json();
+    const { query, top_k = 5, stream = true } = await req.json();
 
     if (!query) {
       return new Response(JSON.stringify({ error: RESPONSE_MESSAGES.NO_QUERY }), {
@@ -44,8 +46,23 @@ serve(async (req) => {
     }
 
     console.log(`\n${SEPARATOR.SECTION}`);
-    console.log(`${LOG_PREFIX.QUERY} Query: "${query}"`);
+    logger.query(`Query: "${query}" (stream: ${stream})`);
     console.log(`${SEPARATOR.SECTION}`);
+
+    // Check response cache first (only for non-streaming requests)
+    if (!stream) {
+      const responseCache = getResponseCache();
+      const cached = await responseCache.get(query, top_k);
+
+      if (cached) {
+        logger.success(`Returning cached response`);
+        console.log(`${SEPARATOR.SECTION}\n`);
+        return new Response(
+          JSON.stringify(cached),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     // Step 1: Plan (1 LLM call)
     const plan = await createQueryPlan(query, top_k, supabase);
@@ -62,9 +79,7 @@ serve(async (req) => {
     }
 
     // Step 2: Execute (no LLM - parallel data fetching)
-    console.log(
-      `${LOG_PREFIX.EXECUTE} Executing ${plan.data_sources.length} data source(s) in parallel...`,
-    );
+    logger.execute(`Executing ${plan.data_sources.length} data source(s) in parallel...`);
 
     const allResults = await Promise.all(
       plan.data_sources.map((ds) => executeDataSource(ds, supabase)),
@@ -74,9 +89,7 @@ serve(async (req) => {
     const allFlattened = allResults.flat();
     const results: SearchResult[] = allFlattened.slice(0, top_k);
 
-    console.log(
-      `${LOG_PREFIX.SUCCESS} Retrieved ${allFlattened.length} results, returning top ${results.length}`,
-    );
+    logger.success(`Retrieved ${allFlattened.length} results → returning top ${results.length}`);
 
     if (results.length === 0) {
       return new Response(
@@ -87,18 +100,6 @@ serve(async (req) => {
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
-    }
-
-    // Step 3: Synthesize answer
-    const answer = await generateAnswer(query, results, plan.intent, supabase);
-
-    // Step 4: Evaluate answer quality (fast heuristics, no LLM call)
-    const evaluation = await evaluateAnswer(query, answer, results.length, supabase);
-    if (evaluation) {
-      console.log(
-        `${LOG_PREFIX.METRICS} Answer quality: ${evaluation.score}/100 (${evaluation.confidence})`,
-      );
-      console.log(`${LOG_PREFIX.METRICS} Issues: ${evaluation.issues.join(', ')}`);
     }
 
     // Format sources for response
@@ -121,20 +122,93 @@ serve(async (req) => {
       };
     });
 
-    console.log(`${LOG_PREFIX.SUCCESS} Answer generated successfully`);
-    console.log(`${SEPARATOR.SECTION}\n`);
+    // Step 3: Synthesize answer (streaming or non-streaming)
+    if (stream) {
+      // Stream the response using Server-Sent Events
+      const encoder = new TextEncoder();
+      const answerStream = generateAnswerStream(query, results, plan.intent, supabase);
 
-    return new Response(
-      JSON.stringify({
+      const readableStream = new ReadableStream({
+        async start(controller) {
+          try {
+            // Send metadata first
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'metadata',
+                sources,
+                metadata: {
+                  intent: plan.intent,
+                  data_sources_used: plan.data_sources.map((ds) => ds.source),
+                }
+              })}\n\n`
+            ));
+
+            // Stream answer chunks
+            for await (const chunk of answerStream) {
+              controller.enqueue(encoder.encode(
+                `data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`
+              ));
+            }
+
+            // Send completion marker
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+
+            logger.success(`Answer streamed successfully`);
+            console.log(`${SEPARATOR.SECTION}\n`);
+          } catch (error) {
+            console.error(`${LOG_PREFIX.ERROR} Streaming error:`, error);
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'error',
+                message: error instanceof Error ? error.message : 'Streaming error'
+              })}\n\n`
+            ));
+          } finally {
+            controller.close();
+          }
+        }
+      });
+
+      return new Response(readableStream, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        }
+      });
+    } else {
+      // Non-streaming: Generate complete answer
+      const answer = await generateAnswer(query, results, plan.intent, supabase);
+
+      // Step 4: Evaluate answer quality (fast heuristics, no LLM call)
+      const evaluation = await evaluateAnswer(query, answer, results.length, supabase);
+      if (evaluation) {
+        logger.metrics(`Answer quality: ${evaluation.score}/100 (${evaluation.confidence})`);
+        logger.debug(`Issues: ${evaluation.issues.join(', ')}`);
+      }
+
+      const responseData = {
         answer,
         sources,
         metadata: {
           intent: plan.intent,
           data_sources_used: plan.data_sources.map((ds) => ds.source),
         },
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+      };
+
+      // Cache the response for future requests
+      const responseCache = getResponseCache();
+      responseCache.set(query, top_k, responseData);
+
+      logger.success(`Answer generated successfully`);
+      console.log(`${SEPARATOR.SECTION}\n`);
+
+      return new Response(
+        JSON.stringify(responseData),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
   } catch (error) {
     console.error(`${LOG_PREFIX.ERROR} Error:`, error);
 

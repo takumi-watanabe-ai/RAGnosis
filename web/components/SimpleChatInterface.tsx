@@ -9,7 +9,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { sendChatMessage } from "@/lib/api";
+import { sendChatMessageStream } from "@/lib/api";
 import { SourceCard } from "./SourceCard";
 import type { SearchResult } from "@/lib/api";
 import { quickQuestions } from "@/lib/quick-questions";
@@ -122,26 +122,70 @@ export const SimpleChatInterface = forwardRef<
     setInput("");
     setIsLoading(true);
 
+    // Create placeholder assistant message for streaming
+    const assistantMessageId = (Date.now() + 1).toString();
+    const assistantMessage: Message = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      sources: [],
+      metadata: {},
+    };
+
+    setMessages((prev) => [...prev, assistantMessage]);
+
     try {
-      const response = await sendChatMessage(text, settings.topK);
+      const stream = sendChatMessageStream(text, settings.topK);
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: response.answer,
-        sources: response.sources,
-        metadata: response.metadata,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
+      for await (const event of stream) {
+        if (event.type === "metadata") {
+          // Update sources and metadata
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    sources: event.sources || [],
+                    metadata: event.metadata,
+                  }
+                : msg,
+            ),
+          );
+        } else if (event.type === "chunk") {
+          // Append content chunk
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: msg.content + (event.content || "") }
+                : msg,
+            ),
+          );
+        } else if (event.type === "error") {
+          // Handle error
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    content: `Error: ${event.message || "Unknown error"}`,
+                  }
+                : msg,
+            ),
+          );
+          break;
+        }
+      }
     } catch (error) {
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: `Error: ${error instanceof Error ? error.message : "Failed to get response"}`,
-      };
-
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMessageId
+            ? {
+                ...msg,
+                content: `Error: ${error instanceof Error ? error.message : "Failed to get response"}`,
+              }
+            : msg,
+        ),
+      );
     } finally {
       setIsLoading(false);
       inputRef.current?.focus();
@@ -224,95 +268,101 @@ export const SimpleChatInterface = forwardRef<
                   className={`${message.role === "user" ? "text-right" : ""}`}
                 >
                   {message.role === "assistant" ? (
-                    <div className="text-charcoal leading-relaxed prose prose-lg max-w-none font-light">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          p: ({ children }) => (
-                            <p className="mb-6 text-base sm:text-lg text-charcoal leading-relaxed">
-                              {children}
-                            </p>
-                          ),
-                          ul: ({ children }) => (
-                            <ul className="mb-6 space-y-2 list-none pl-0 [&>li]:pl-6 [&>li]:relative [&>li]:before:content-['–'] [&>li]:before:absolute [&>li]:before:left-0 [&>li]:before:text-stone [&>li]:before:font-light">
-                              {children}
-                            </ul>
-                          ),
-                          ol: ({ children }) => (
-                            <ol className="mb-6 space-y-2 list-decimal pl-6 [&>li]:pl-2">
-                              {children}
-                            </ol>
-                          ),
-                          li: ({ children }) => (
-                            <li className="text-base sm:text-lg text-charcoal leading-relaxed mb-2">
-                              {children}
-                            </li>
-                          ),
-                          strong: ({ children }) => (
-                            <strong className="text-charcoal font-normal">
-                              {children}
-                            </strong>
-                          ),
-                          h1: ({ children }) => (
-                            <h1 className="text-2xl sm:text-3xl font-light text-charcoal mb-6 mt-8 border-b border-stone-border pb-3">
-                              {children}
-                            </h1>
-                          ),
-                          h2: ({ children }) => (
-                            <h2 className="text-xl sm:text-2xl font-normal text-charcoal mb-5 mt-8 border-b border-stone-border/50 pb-2">
-                              {children}
-                            </h2>
-                          ),
-                          h3: ({ children }) => (
-                            <h3 className="text-lg sm:text-xl font-normal text-charcoal mb-4 mt-6">
-                              {children}
-                            </h3>
-                          ),
-                          h4: ({ children }) => (
-                            <h4 className="text-base sm:text-lg font-medium text-charcoal mb-3 mt-5 tracking-wide">
-                              {children}
-                            </h4>
-                          ),
-                          h5: ({ children }) => (
-                            <h5 className="text-base font-medium text-charcoal mb-2 mt-4 tracking-wide uppercase text-stone">
-                              {children}
-                            </h5>
-                          ),
-                          h6: ({ children }) => (
-                            <h6 className="text-sm font-medium text-stone mb-2 mt-3 tracking-wider uppercase">
-                              {children}
-                            </h6>
-                          ),
-                          code: ({ children, className }) => {
-                            const isInline = !className;
-                            return isInline ? (
-                              <code className="text-charcoal bg-cream px-2 py-0.5 text-sm font-mono">
+                    message.content.length === 0 && isLoading ? (
+                      <div className="text-base text-stone italic font-light">
+                        Ragging{loadingDots}
+                      </div>
+                    ) : (
+                      <div className="text-charcoal leading-relaxed prose prose-lg max-w-none font-light">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            p: ({ children }) => (
+                              <p className="mb-6 text-base sm:text-lg text-charcoal leading-relaxed">
                                 {children}
-                              </code>
-                            ) : (
-                              <code className={className}>{children}</code>
-                            );
-                          },
-                          pre: ({ children }) => (
-                            <pre className="bg-cream p-6 overflow-x-auto mb-6 text-sm">
-                              {children}
-                            </pre>
-                          ),
-                          a: ({ children, href }) => (
-                            <a
-                              href={href}
-                              className="text-charcoal hover:opacity-60 underline decoration-1 underline-offset-4 transition-opacity"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              {children}
-                            </a>
-                          ),
-                        }}
-                      >
-                        {message.content}
-                      </ReactMarkdown>
-                    </div>
+                              </p>
+                            ),
+                            ul: ({ children }) => (
+                              <ul className="mb-6 space-y-2 list-none pl-0 [&>li]:pl-6 [&>li]:relative [&>li]:before:content-['–'] [&>li]:before:absolute [&>li]:before:left-0 [&>li]:before:text-stone [&>li]:before:font-light">
+                                {children}
+                              </ul>
+                            ),
+                            ol: ({ children }) => (
+                              <ol className="mb-6 space-y-2 list-decimal pl-6 [&>li]:pl-2">
+                                {children}
+                              </ol>
+                            ),
+                            li: ({ children }) => (
+                              <li className="text-base sm:text-lg text-charcoal leading-relaxed mb-2">
+                                {children}
+                              </li>
+                            ),
+                            strong: ({ children }) => (
+                              <strong className="text-charcoal font-normal">
+                                {children}
+                              </strong>
+                            ),
+                            h1: ({ children }) => (
+                              <h1 className="text-2xl sm:text-3xl font-light text-charcoal mb-6 mt-8 border-b border-stone-border pb-3">
+                                {children}
+                              </h1>
+                            ),
+                            h2: ({ children }) => (
+                              <h2 className="text-xl sm:text-2xl font-normal text-charcoal mb-5 mt-8 border-b border-stone-border/50 pb-2">
+                                {children}
+                              </h2>
+                            ),
+                            h3: ({ children }) => (
+                              <h3 className="text-lg sm:text-xl font-normal text-charcoal mb-4 mt-6">
+                                {children}
+                              </h3>
+                            ),
+                            h4: ({ children }) => (
+                              <h4 className="text-base sm:text-lg font-medium text-charcoal mb-3 mt-5 tracking-wide">
+                                {children}
+                              </h4>
+                            ),
+                            h5: ({ children }) => (
+                              <h5 className="text-base font-medium text-charcoal mb-2 mt-4 tracking-wide uppercase text-stone">
+                                {children}
+                              </h5>
+                            ),
+                            h6: ({ children }) => (
+                              <h6 className="text-sm font-medium text-stone mb-2 mt-3 tracking-wider uppercase">
+                                {children}
+                              </h6>
+                            ),
+                            code: ({ children, className }) => {
+                              const isInline = !className;
+                              return isInline ? (
+                                <code className="text-charcoal bg-cream px-2 py-0.5 text-sm font-mono">
+                                  {children}
+                                </code>
+                              ) : (
+                                <code className={className}>{children}</code>
+                              );
+                            },
+                            pre: ({ children }) => (
+                              <pre className="bg-cream p-6 overflow-x-auto mb-6 text-sm">
+                                {children}
+                              </pre>
+                            ),
+                            a: ({ children, href }) => (
+                              <a
+                                href={href}
+                                className="text-charcoal hover:opacity-60 underline decoration-1 underline-offset-4 transition-opacity"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {children}
+                              </a>
+                            ),
+                          }}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+                      </div>
+                    )
                   ) : (
                     <div className="text-lg text-charcoal italic font-light">
                       {message.content}
@@ -320,12 +370,13 @@ export const SimpleChatInterface = forwardRef<
                   )}
                 </div>
 
-                {/* Copy and Sources buttons for assistant messages */}
-                {message.role === "assistant" && (
+                {/* Copy and Sources buttons for assistant messages - only show when streaming is complete */}
+                {message.role === "assistant" && !isLoading && (
                   <div className="flex items-center gap-3 mt-6">
                     <button
                       onClick={() => handleCopy(message.content, message.id)}
                       className="text-xs text-stone hover:text-charcoal transition-colors uppercase tracking-wider font-normal"
+                      disabled={isLoading}
                     >
                       {copiedId === message.id ? "Copied" : "Copy"}
                     </button>
@@ -365,17 +416,6 @@ export const SimpleChatInterface = forwardRef<
               </div>
             </div>
           ))}
-
-          {isLoading && (
-            <div className="py-8 max-w-3xl">
-              <div className="text-xs text-stone mb-4 uppercase tracking-wider font-normal">
-                RAGnosis
-              </div>
-              <div className="text-base text-stone italic font-light">
-                Ragging{loadingDots}
-              </div>
-            </div>
-          )}
 
           <div ref={messagesEndRef} />
         </div>

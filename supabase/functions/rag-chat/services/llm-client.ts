@@ -18,7 +18,69 @@ export interface GenerateOptions {
   maxTokens?: number
 }
 
+export interface TokenUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
+export interface GenerateResult {
+  content: string
+  usage?: TokenUsage
+}
+
 type LLMProvider = 'openrouter' | 'ollama'
+
+/**
+ * Check if an error is retryable (rate limits, timeouts, etc.)
+ */
+function isRetryableError(error: Error): boolean {
+  const errorMessage = error.message.toLowerCase()
+  return (
+    errorMessage.includes('rate limit') ||
+    errorMessage.includes('429') ||
+    errorMessage.includes('503') ||
+    errorMessage.includes('timeout') ||
+    errorMessage.includes('overloaded') ||
+    errorMessage.includes('temporarily unavailable')
+  )
+}
+
+/**
+ * Retry with exponential backoff
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxAttempts: number = 3,
+  onRetry?: (attempt: number, waitSeconds: number) => void
+): Promise<T> {
+  let lastError: Error | null = null
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (error) {
+      lastError = error as Error
+
+      if (attempt >= maxAttempts || !isRetryableError(lastError)) {
+        throw lastError
+      }
+
+      const waitSeconds = 5 * attempt // 5s, 10s, 15s
+      console.warn(
+        `${LOG_PREFIX.WARN} Retrying after error (attempt ${attempt}/${maxAttempts}): ${lastError.message}`
+      )
+
+      if (onRetry) {
+        onRetry(attempt, waitSeconds)
+      }
+
+      await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000))
+    }
+  }
+
+  throw lastError
+}
 
 /**
  * LLM Client for interacting with OpenRouter (production) or Ollama (local)
@@ -31,13 +93,24 @@ export class LLMClient {
   private apiKey?: string
 
   constructor() {
-    // Auto-detect: Use OpenRouter if API key exists, else Ollama
+    // Auto-detect: Use OpenRouter if API key AND model are properly configured, else Ollama
     this.apiKey = config.llm.openrouter.apiKey
-    this.provider = this.apiKey ? 'openrouter' : 'ollama'
+    const openRouterModel = config.llm.openrouter.model
+
+    // Check if OpenRouter is fully configured (both API key and model must be non-empty and not placeholder)
+    const isPlaceholder = this.apiKey?.toLowerCase().includes('your_') ||
+                         this.apiKey?.toLowerCase().includes('placeholder')
+    const hasOpenRouterConfig = this.apiKey &&
+                                this.apiKey.length > 0 &&
+                                !isPlaceholder &&
+                                openRouterModel &&
+                                openRouterModel.length > 0
+
+    this.provider = hasOpenRouterConfig ? 'openrouter' : 'ollama'
 
     if (this.provider === 'openrouter') {
       this.baseUrl = config.llm.openrouter.baseUrl
-      this.model = config.llm.openrouter.model
+      this.model = openRouterModel
     } else {
       this.baseUrl = config.llm.ollama.url
       this.model = config.llm.ollama.model
@@ -150,22 +223,41 @@ export class LLMClient {
 
   /**
    * Generate API call (for text generation)
+   * Returns content only for backwards compatibility
    */
   async generate(
     prompt: string,
     options: GenerateOptions = {}
   ): Promise<string> {
+    const result = await this.generateWithUsage(prompt, options)
+    return result.content
+  }
+
+  /**
+   * Generate API call with token usage tracking
+   */
+  async generateWithUsage(
+    prompt: string,
+    options: GenerateOptions = {},
+    onRetry?: (attempt: number, waitSeconds: number) => void
+  ): Promise<GenerateResult> {
     const {
       temperature = config.llm.answer.temperature,
       maxTokens = config.llm.answer.maxTokens,
     } = options
 
     try {
-      if (this.provider === 'openrouter') {
-        return await this.generateOpenRouter(prompt, temperature, maxTokens)
-      } else {
-        return await this.generateOllama(prompt, temperature, maxTokens)
-      }
+      return await retryWithBackoff(
+        async () => {
+          if (this.provider === 'openrouter') {
+            return await this.generateOpenRouterWithUsage(prompt, temperature, maxTokens)
+          } else {
+            return await this.generateOllamaWithUsage(prompt, temperature, maxTokens)
+          }
+        },
+        3,
+        onRetry
+      )
     } catch (error) {
       console.error(`${LOG_PREFIX.ERROR} LLM generate failed:`, error)
       throw error
@@ -180,6 +272,18 @@ export class LLMClient {
     temperature: number,
     maxTokens: number
   ): Promise<string> {
+    const result = await this.generateOpenRouterWithUsage(prompt, temperature, maxTokens)
+    return result.content
+  }
+
+  /**
+   * OpenRouter generate with token usage tracking
+   */
+  private async generateOpenRouterWithUsage(
+    prompt: string,
+    temperature: number,
+    maxTokens: number
+  ): Promise<GenerateResult> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${this.apiKey}`,
@@ -204,7 +308,20 @@ export class LLMClient {
     }
 
     const data = await response.json()
-    return data.choices[0].message.content.trim()
+    const content = data.choices[0].message.content.trim()
+
+    // Extract token usage if available
+    let usage: TokenUsage | undefined
+    if (data.usage) {
+      usage = {
+        promptTokens: data.usage.prompt_tokens || 0,
+        completionTokens: data.usage.completion_tokens || 0,
+        totalTokens: data.usage.total_tokens || 0,
+      }
+      console.log(`${LOG_PREFIX.INFO} Token usage: ${usage.totalTokens} total (${usage.promptTokens} prompt + ${usage.completionTokens} completion)`)
+    }
+
+    return { content, usage }
   }
 
   /**
@@ -215,6 +332,18 @@ export class LLMClient {
     temperature: number,
     maxTokens: number
   ): Promise<string> {
+    const result = await this.generateOllamaWithUsage(prompt, temperature, maxTokens)
+    return result.content
+  }
+
+  /**
+   * Ollama generate with token usage tracking
+   */
+  private async generateOllamaWithUsage(
+    prompt: string,
+    temperature: number,
+    maxTokens: number
+  ): Promise<GenerateResult> {
     const response = await fetch(`${this.baseUrl}/api/generate`, {
       method: 'POST',
       headers: {
@@ -236,7 +365,239 @@ export class LLMClient {
     }
 
     const data = await response.json()
-    return data.response.trim()
+    const content = data.response.trim()
+
+    // Ollama returns token counts differently
+    let usage: TokenUsage | undefined
+    if (data.prompt_eval_count || data.eval_count) {
+      usage = {
+        promptTokens: data.prompt_eval_count || 0,
+        completionTokens: data.eval_count || 0,
+        totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
+      }
+      console.log(`${LOG_PREFIX.INFO} Token usage: ${usage.totalTokens} total (${usage.promptTokens} prompt + ${usage.completionTokens} completion)`)
+    }
+
+    return { content, usage }
+  }
+
+  /**
+   * Generate API call with streaming support (for text generation)
+   */
+  async *generateStream(
+    prompt: string,
+    options: GenerateOptions = {},
+    onRetry?: (attempt: number, waitSeconds: number) => void
+  ): AsyncIterableIterator<string> {
+    const {
+      temperature = config.llm.answer.temperature,
+      maxTokens = config.llm.answer.maxTokens,
+    } = options
+
+    // Retry the initial connection, then stream
+    let attempt = 0
+    const maxAttempts = 3
+
+    while (true) {
+      attempt++
+      try {
+        if (this.provider === 'openrouter') {
+          yield* this.generateStreamOpenRouter(prompt, temperature, maxTokens)
+        } else {
+          yield* this.generateStreamOllama(prompt, temperature, maxTokens)
+        }
+        break // Success, exit retry loop
+      } catch (error) {
+        const err = error as Error
+
+        if (attempt >= maxAttempts || !isRetryableError(err)) {
+          console.error(`${LOG_PREFIX.ERROR} LLM streaming generate failed:`, error)
+          throw error
+        }
+
+        const waitSeconds = 5 * attempt
+        console.warn(
+          `${LOG_PREFIX.WARN} Streaming retry (attempt ${attempt}/${maxAttempts}): ${err.message}`
+        )
+
+        if (onRetry) {
+          onRetry(attempt, waitSeconds)
+        }
+
+        await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000))
+      }
+    }
+  }
+
+  /**
+   * OpenRouter streaming generate implementation
+   */
+  private async *generateStreamOpenRouter(
+    prompt: string,
+    temperature: number,
+    maxTokens: number
+  ): AsyncIterableIterator<string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.apiKey}`,
+      'HTTP-Referer': 'https://ragnosis.com',
+      'X-Title': 'RAGnosis',
+    }
+
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: this.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature,
+        max_tokens: maxTokens,
+        stream: true, // Enable streaming
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`OpenRouter API request failed: ${response.statusText} - ${errorText}`)
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is null')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = '' // Buffer for incomplete lines
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value, { stream: true })
+        buffer += chunk
+
+        // Split by newlines but keep the last incomplete line in buffer
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep last (possibly incomplete) line in buffer
+
+        for (const line of lines) {
+          if (!line.trim().startsWith('data: ')) continue
+
+          const data = line.replace(/^data: /, '').trim()
+          if (data === '[DONE]') continue
+          if (!data) continue
+
+          try {
+            const json = JSON.parse(data)
+            const content = json.choices?.[0]?.delta?.content
+            if (content) {
+              yield content
+            }
+          } catch (e) {
+            // Skip malformed JSON chunks
+            console.warn(`${LOG_PREFIX.WARN} Failed to parse SSE chunk:`, data)
+          }
+        }
+      }
+
+      // Process any remaining buffered line
+      if (buffer.trim().startsWith('data: ')) {
+        const data = buffer.replace(/^data: /, '').trim()
+        if (data && data !== '[DONE]') {
+          try {
+            const json = JSON.parse(data)
+            const content = json.choices?.[0]?.delta?.content
+            if (content) {
+              yield content
+            }
+          } catch (e) {
+            console.warn(`${LOG_PREFIX.WARN} Failed to parse final SSE chunk:`, data)
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  }
+
+  /**
+   * Ollama streaming generate implementation
+   */
+  private async *generateStreamOllama(
+    prompt: string,
+    temperature: number,
+    maxTokens: number
+  ): AsyncIterableIterator<string> {
+    const response = await fetch(`${this.baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: this.model,
+        prompt,
+        stream: true, // Enable streaming
+        options: {
+          temperature,
+          num_predict: maxTokens,
+        },
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Ollama streaming generate request failed: ${response.statusText}`)
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is null')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = '' // Buffer for incomplete lines
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value, { stream: true })
+        buffer += chunk
+
+        // Split by newlines but keep the last incomplete line in buffer
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep last (possibly incomplete) line in buffer
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+
+          try {
+            const json = JSON.parse(line)
+            if (json.response) {
+              yield json.response
+            }
+          } catch (e) {
+            // Skip malformed JSON chunks
+            console.warn(`${LOG_PREFIX.WARN} Failed to parse Ollama chunk:`, line)
+          }
+        }
+      }
+
+      // Process any remaining buffered line
+      if (buffer.trim()) {
+        try {
+          const json = JSON.parse(buffer)
+          if (json.response) {
+            yield json.response
+          }
+        } catch (e) {
+          console.warn(`${LOG_PREFIX.WARN} Failed to parse final Ollama chunk:`, buffer)
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
   }
 
   /**

@@ -2,11 +2,9 @@
 """
 RAGnosis RAGAS Evaluation Script v2
 
-Evaluates RAGnosis using 4 core RAGAS metrics:
+Evaluates RAGnosis using 2 core RAGAS metrics:
 1. Faithfulness - Answer grounded in retrieved context (anti-hallucination)
-2. Answer Relevance - Addresses the query
-3. Context Precision - Retrieved docs are relevant
-4. Answer Correctness - Factually accurate vs ground truth
+2. Answer Relevancy - Addresses the query
 
 Usage:
     python evaluate_ragnosis.py
@@ -23,23 +21,27 @@ from typing import List, Dict, Any, Optional
 from tqdm import tqdm
 import logging
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # Disable RAGAS telemetry
 os.environ["RAGAS_DO_NOT_TRACK"] = "true"
 
 # Suppress logging noise
-logging.getLogger('ragas').setLevel(logging.ERROR)
-logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger("ragas").setLevel(logging.ERROR)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 from datasets import Dataset
 from ragas import evaluate
 import warnings
-warnings.filterwarnings('ignore', category=DeprecationWarning)
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from ragas.metrics import (
     faithfulness,
     answer_relevancy,
-    context_precision,
-    answer_correctness,
 )
 from langchain_community.chat_models import ChatOllama
 from langchain_community.embeddings import FastEmbedEmbeddings
@@ -47,9 +49,9 @@ import requests
 
 # Configuration
 DEFAULT_EDGE_FUNCTION_URL = os.getenv(
-    "EDGE_FUNCTION_URL",
-    "http://127.0.0.1:54321/functions/v1/rag-chat"
+    "EDGE_FUNCTION_URL", "http://127.0.0.1:54321/functions/v1/rag-chat"
 )
+DEFAULT_SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 DEFAULT_LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
 DEFAULT_LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5:3b-instruct")
 DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
@@ -68,12 +70,14 @@ class RAGnosisEvaluator:
         llm_base_url: str = DEFAULT_LLM_BASE_URL,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
         timeout: int = DEFAULT_TIMEOUT,
+        supabase_anon_key: str = DEFAULT_SUPABASE_ANON_KEY,
     ):
         self.edge_function_url = edge_function_url
         self.llm_model = llm_model
         self.llm_base_url = llm_base_url
         self.embedding_model = embedding_model
         self.timeout = timeout
+        self.supabase_anon_key = supabase_anon_key
 
         print(f"🎯 RAGnosis Evaluator v2")
         print(f"🌐 Edge Function: {self.edge_function_url}")
@@ -95,6 +99,7 @@ class RAGnosisEvaluator:
         )
 
         from langchain_core.embeddings import Embeddings
+
         base_embeddings = FastEmbedEmbeddings(
             model_name=self.embedding_model,
             cache_dir=os.getenv("FASTEMBED_CACHE_PATH", None),
@@ -111,7 +116,9 @@ class RAGnosisEvaluator:
             def embed_query(self, text):
                 return self._base.embed_query(text)
 
-        self.ragas_embeddings = SafeFastEmbeddings(base_embeddings, self.embedding_model)
+        self.ragas_embeddings = SafeFastEmbeddings(
+            base_embeddings, self.embedding_model
+        )
         print(f"✅ RAGAS initialized")
 
     def load_golden_dataset(
@@ -119,7 +126,7 @@ class RAGnosisEvaluator:
         filepath: str = DEFAULT_GOLDEN_DATA,
         max_samples: Optional[int] = None,
         offset: int = 0,
-        filter_category: Optional[str] = None
+        filter_category: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Load golden dataset from JSONL."""
         all_questions = []
@@ -129,8 +136,12 @@ class RAGnosisEvaluator:
 
         # Filter by category if specified
         if filter_category:
-            questions = [q for q in all_questions if q.get("category") == filter_category]
-            print(f"\n📂 Filtered to category '{filter_category}': {len(questions)} questions")
+            questions = [
+                q for q in all_questions if q.get("category") == filter_category
+            ]
+            print(
+                f"\n📂 Filtered to category '{filter_category}': {len(questions)} questions"
+            )
         else:
             questions = all_questions
 
@@ -140,7 +151,11 @@ class RAGnosisEvaluator:
         if max_samples:
             questions = questions[:max_samples]
 
-        range_str = f" [questions {offset+1}-{offset+len(questions)}]" if offset > 0 or max_samples else ""
+        range_str = (
+            f" [questions {offset + 1}-{offset + len(questions)}]"
+            if offset > 0 or max_samples
+            else ""
+        )
         if not filter_category:
             print(f"\n📂 Loaded {len(questions)} questions{range_str}")
 
@@ -149,11 +164,17 @@ class RAGnosisEvaluator:
     def call_edge_function(self, query: str, top_k: int = 5) -> Dict[str, Any]:
         """Call RAGnosis Edge Function."""
         try:
+            headers = {"Content-Type": "application/json"}
+
+            # Add authorization header if anon key is provided
+            if self.supabase_anon_key:
+                headers["Authorization"] = f"Bearer {self.supabase_anon_key}"
+
             response = requests.post(
                 self.edge_function_url,
-                json={"query": query, "top_k": top_k},
-                headers={"Content-Type": "application/json"},
-                timeout=self.timeout
+                json={"query": query, "top_k": top_k, "stream": False},
+                headers=headers,
+                timeout=self.timeout,
             )
             response.raise_for_status()
             return response.json()
@@ -162,7 +183,9 @@ class RAGnosisEvaluator:
         except Exception as e:
             return {"answer": f"Error: {str(e)}", "sources": [], "error": str(e)}
 
-    def validate_retrieval(self, prediction: Dict[str, Any], expected: Dict[str, Any]) -> Dict[str, bool]:
+    def validate_retrieval(
+        self, prediction: Dict[str, Any], expected: Dict[str, Any]
+    ) -> Dict[str, bool]:
         """Validate expected_doc_types and contains_info_about."""
         validation = {}
 
@@ -170,21 +193,21 @@ class RAGnosisEvaluator:
         if "expected_doc_types" in expected:
             source_types = [s.get("type", "") for s in prediction.get("sources", [])]
             has_expected_types = any(
-                exp_type in source_types
-                for exp_type in expected["expected_doc_types"]
+                exp_type in source_types for exp_type in expected["expected_doc_types"]
             )
             validation["has_expected_doc_types"] = has_expected_types
 
         # Check contains_info_about
         if "contains_info_about" in expected:
-            all_text = " ".join([
-                s.get("name", "") + " " + prediction.get("answer", "")
-                for s in prediction.get("sources", [])
-            ]).lower()
+            all_text = " ".join(
+                [
+                    s.get("name", "") + " " + prediction.get("answer", "")
+                    for s in prediction.get("sources", [])
+                ]
+            ).lower()
 
             has_info = all(
-                entity.lower() in all_text
-                for entity in expected["contains_info_about"]
+                entity.lower() in all_text for entity in expected["contains_info_about"]
             )
             validation["has_expected_entities"] = has_info
 
@@ -232,7 +255,9 @@ class RAGnosisEvaluator:
             prediction.update(validation)
 
             if "has_expected_doc_types" in validation:
-                doc_type_accuracy.append(1 if validation["has_expected_doc_types"] else 0)
+                doc_type_accuracy.append(
+                    1 if validation["has_expected_doc_types"] else 0
+                )
             if "has_expected_entities" in validation:
                 entity_accuracy.append(1 if validation["has_expected_entities"] else 0)
 
@@ -246,13 +271,18 @@ class RAGnosisEvaluator:
         # Custom metrics
         custom_metrics = {
             "total_questions": len(questions),
-            "error_rate": sum(1 for p in predictions if p["has_error"]) / len(predictions),
+            "error_rate": sum(1 for p in predictions if p["has_error"])
+            / len(predictions),
         }
 
         if doc_type_accuracy:
-            custom_metrics["doc_type_accuracy"] = sum(doc_type_accuracy) / len(doc_type_accuracy)
+            custom_metrics["doc_type_accuracy"] = sum(doc_type_accuracy) / len(
+                doc_type_accuracy
+            )
         if entity_accuracy:
-            custom_metrics["entity_accuracy"] = sum(entity_accuracy) / len(entity_accuracy)
+            custom_metrics["entity_accuracy"] = sum(entity_accuracy) / len(
+                entity_accuracy
+            )
 
         # RAGAS evaluation
         valid_predictions = [p for p in predictions if p["contexts"]]
@@ -272,26 +302,30 @@ class RAGnosisEvaluator:
             "question": [p["question"] for p in valid_predictions],
             "answer": [p["answer"] for p in valid_predictions],
             "contexts": [p["contexts"] for p in valid_predictions],
-            "ground_truth": [p["ground_truth"] for p in valid_predictions],
-            "reference": [p["ground_truth"] for p in valid_predictions],
         }
 
         dataset = Dataset.from_dict(ragas_data)
 
         try:
             from ragas.run_config import RunConfig
-            run_config = RunConfig(max_workers=4, max_wait=180, timeout=180, max_retries=5)
+
+            run_config = RunConfig(
+                max_workers=4, max_wait=180, timeout=180, max_retries=5
+            )
 
             ragas_result = evaluate(
                 dataset,
-                metrics=[faithfulness, answer_relevancy, context_precision, answer_correctness],
+                metrics=[
+                    faithfulness,
+                    answer_relevancy,
+                ],
                 llm=self.ragas_llm,
                 embeddings=self.ragas_embeddings,
                 run_config=run_config,
             )
 
             df = ragas_result.to_pandas()
-            ragas_metrics = df.select_dtypes(include=['number']).mean().to_dict()
+            ragas_metrics = df.select_dtypes(include=["number"]).mean().to_dict()
 
             return {
                 "edge_function_url": self.edge_function_url,
@@ -372,10 +406,16 @@ def save_results(results: Dict[str, Any], output_dir: str):
 def main():
     parser = argparse.ArgumentParser(description="RAGnosis RAGAS Evaluation v2")
     parser.add_argument("--golden_data", default=DEFAULT_GOLDEN_DATA)
-    parser.add_argument("--max_samples", type=int, default=None, help="Max questions to evaluate")
+    parser.add_argument(
+        "--max_samples", type=int, default=None, help="Max questions to evaluate"
+    )
     parser.add_argument("--offset", type=int, default=0, help="Skip first N questions")
-    parser.add_argument("--filter_category", type=str, default=None,
-                       help="Filter by category: concepts, models, repos, comparison, implementation, troubleshooting")
+    parser.add_argument(
+        "--filter_category",
+        type=str,
+        default=None,
+        help="Filter by category: concepts, models, repos, comparison, implementation, troubleshooting",
+    )
     parser.add_argument("--top_k", type=int, default=5)
     parser.add_argument("--llm_model", default=DEFAULT_LLM_MODEL)
     parser.add_argument("--llm_base_url", default=DEFAULT_LLM_BASE_URL)
@@ -403,7 +443,7 @@ def main():
         args.golden_data,
         max_samples=args.max_samples,
         offset=args.offset,
-        filter_category=args.filter_category
+        filter_category=args.filter_category,
     )
 
     results = evaluator.evaluate_dataset(

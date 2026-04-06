@@ -24,7 +24,7 @@ export interface FeatureFlags {
 export class FeatureFlagService {
   private cache: FeatureFlags | null = null
   private lastFetch = 0
-  private cacheTTL = 60000 // 60 seconds
+  private cacheTTL = 300000 // 5 minutes (300 seconds) - reduced DB round-trips
 
   constructor(
     private supabase: SupabaseClient,

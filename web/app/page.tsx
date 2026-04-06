@@ -149,7 +149,7 @@ export default function Home() {
             href="/chat"
             className="inline-block px-6 sm:px-8 py-3 text-xs sm:text-sm uppercase tracking-[0.15em] border-2 border-charcoal text-charcoal hover:bg-charcoal hover:text-cream transition-all font-normal"
           >
-            Start Exploring
+            Start Diagnosing
           </Link>
         </div>
 
@@ -162,14 +162,14 @@ export default function Home() {
           }`}
         >
           <h2 className="text-sm sm:text-base font-normal text-center mb-8 sm:mb-10 text-charcoal uppercase tracking-[0.15em]">
-            Start Diagnosing
+            Example Questions
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <ExampleQuestion text="What are the top embedding models?" />
-            <ExampleQuestion text="Most popular RAG frameworks on GitHub?" />
-            <ExampleQuestion text="LangChain vs LlamaIndex?" />
-            <ExampleQuestion text="What are the best reranking models?" />
-            <ExampleQuestion text="How does RAG work?" />
+            <ExampleQuestion text="What is RAG?" />
+            <ExampleQuestion text="When should I use RAG?" />
+            <ExampleQuestion text="What do I need to build RAG?" />
+            <ExampleQuestion text="Which RAG framework should I use?" />
+            <ExampleQuestion text="What are common RAG challenges?" />
             <ExampleQuestion text="What's trending in RAG right now?" />
           </div>
         </div>
@@ -229,7 +229,7 @@ export default function Home() {
       </main>
 
       {/* Subtle CTA */}
-      <div className="text-center py-12 border-t border-stone-border/50 mt-12 sm:mt-20">
+      <div className="text-center py-12 mt-10 mb-16">
         <Link
           href="/market"
           className="inline-block px-8 py-3 border border-charcoal text-charcoal hover:bg-charcoal hover:text-cream transition-all text-sm font-semibold uppercase tracking-wider"

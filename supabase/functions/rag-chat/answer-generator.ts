@@ -42,6 +42,34 @@ export async function generateAnswer(
 }
 
 /**
+ * Generate answer from search results with streaming support
+ */
+export async function* generateAnswerStream(
+  query: string,
+  results: SearchResult[],
+  intent: QueryIntent,
+  supabase?: SupabaseClient,
+): AsyncIterableIterator<string> {
+  // For market intelligence list queries, use LLM with strict grounding
+  const isListQuery = PATTERNS.LIST_QUERY.test(query);
+  if (intent === "market_intelligence" && isListQuery && results.length > 0) {
+    const prompt = buildMarketIntelligencePrompt(query, results);
+    yield* generateWithLLMStream(prompt);
+    return;
+  }
+
+  // Otherwise use LLM to synthesize answer
+  const prompt = buildAnswerPrompt(query, results, intent);
+
+  try {
+    yield* generateWithLLMStream(prompt);
+  } catch (error) {
+    console.error(`${LOG_PREFIX.ERROR} Answer generation failed:`, error);
+    yield RESPONSE_MESSAGES.GENERATION_ERROR;
+  }
+}
+
+/**
  * Build prompt for market intelligence queries with strict grounding
  */
 function buildMarketIntelligencePrompt(query: string, results: SearchResult[]): string {
@@ -106,18 +134,46 @@ Answer:`;
 }
 
 /**
- * Generate answer with LLM
+ * Generate answer with LLM (includes token tracking)
  */
 async function generateWithLLM(prompt: string): Promise<string> {
   try {
     const llmClient = getLLMClient();
-    return await llmClient.generate(prompt, {
+    const result = await llmClient.generateWithUsage(prompt, {
       temperature: 0.3,
       maxTokens: 1000,
     });
+
+    if (result.usage) {
+      console.log(`${LOG_PREFIX.SUCCESS} Generation complete - Used ${result.usage.totalTokens} tokens`)
+    }
+
+    return result.content;
   } catch (error) {
     console.error(`${LOG_PREFIX.ERROR} LLM generation failed:`, error);
     return RESPONSE_MESSAGES.GENERATION_ERROR;
+  }
+}
+
+/**
+ * Generate answer with LLM using streaming (includes retry logic)
+ */
+async function* generateWithLLMStream(prompt: string): AsyncIterableIterator<string> {
+  try {
+    const llmClient = getLLMClient();
+
+    // Retry callback for logging
+    const onRetry = (attempt: number, waitSeconds: number) => {
+      console.log(`${LOG_PREFIX.WARN} Retrying LLM request (${attempt}/3) after ${waitSeconds}s...`)
+    }
+
+    yield* llmClient.generateStream(prompt, {
+      temperature: 0.3,
+      maxTokens: 1000,
+    }, onRetry);
+  } catch (error) {
+    console.error(`${LOG_PREFIX.ERROR} LLM streaming generation failed:`, error);
+    yield RESPONSE_MESSAGES.GENERATION_ERROR;
   }
 }
 
@@ -212,17 +268,25 @@ Answer:`;
  * Get instructions based on query intent
  */
 function getInstructionsByIntent(intent: QueryIntent): string {
-  const baseRules = `You are a RAG/ML expert assistant. Answer STRICTLY using ONLY the sources provided above.
+  const baseRules = `You are a RAG/ML expert assistant. You will receive multiple sources, but you must be SELECTIVE.
+
+**SOURCE SELECTION RULES:**
+1. EVALUATE each source - does it directly answer the user's question?
+2. IGNORE sources that are tangentially related or off-topic
+3. ONLY USE sources that contain information directly relevant to answering the question
+4. Quality over quantity - a focused answer with 2-3 relevant sources is better than a scattered answer with 20 sources
 
 **CRITICAL ANTI-HALLUCINATION RULES:**
-1. ONLY use information EXPLICITLY stated in the provided SOURCES
+1. ONLY use information EXPLICITLY stated in the sources you selected
 2. DO NOT invent, guess, or use external knowledge — not even well-known facts
 3. NEVER cite sources that don't exist in the provided context
+4. If sources don't adequately answer the question, acknowledge the limitation
 
 LENGTH: Answer can never exceed ${config.llm.answer.targetWords} words. Be complete but concise.
 
 FORMATTING:
 - ALWAYS reference sources inline as clickable links: **[Name](url)**
+- Only cite sources you actually used in your answer
 - Use bullet points for lists
 - For structured/multi-section responses, use markdown headers (## for sections, ### for subsections)
 - Structure with line breaks for readability`;
@@ -232,22 +296,26 @@ FORMATTING:
       return `${baseRules}
 
 ANSWER APPROACH:
+- EVALUATE: Which sources directly answer the question? Ignore the rest.
 - FIRST: Directly answer the user's specific question
-- Then provide supporting details from sources
+- Then provide supporting details from ONLY the relevant sources
 
 Requirements:
+- Be selective - only include items that match the user's query
 - Match source types (models → HuggingFace, repos → GitHub)
-- Include ALL metrics (downloads/likes/stars/forks) from sources only
+- Include metrics (downloads/likes/stars/forks) from sources you use
 - Use bullet points for multiple items`;
 
     case "implementation":
       return `${baseRules}
 
 ANSWER APPROACH:
+- EVALUATE: Which sources contain implementation guidance for this question?
 - FIRST: Directly answer the user's specific question
-- Then provide step-by-step implementation from sources
+- Then provide step-by-step implementation from relevant sources
 
 Requirements:
+- Focus on sources with actionable implementation details
 - Step-by-step guidance with parameters from sources only
 - Explain what to do AND why based on sources
 - Use bullet points for steps`;
@@ -256,12 +324,14 @@ Requirements:
       return `${baseRules}
 
 ANSWER APPROACH:
+- EVALUATE: Which sources address this specific problem?
 - FIRST: Directly answer what's causing the issue
-- Then provide solutions from sources
+- Then provide solutions from relevant sources
 
 Requirements:
-- Explain root causes based only on sources
-- List ALL solutions found in sources
+- Focus on sources that directly address the user's problem
+- Explain root causes based only on relevant sources
+- List solutions found in the sources you selected
 - Use bullet points for multiple solutions`;
 
     case "comparison":
@@ -296,10 +366,15 @@ CRITICAL RULES:
 
     case "conceptual":
     default:
-      return `You are a RAG/ML expert assistant. Answer using the sources provided, synthesizing general concepts.
+      return `You are a RAG/ML expert assistant. You will receive multiple sources - select the most relevant ones.
+
+**SOURCE SELECTION FOR CONCEPTUAL QUESTIONS:**
+1. EVALUATE each source - does it explain the concept the user is asking about?
+2. IGNORE sources about unrelated concepts (e.g., if asked about "chunking", ignore sources about "retrieval")
+3. FOCUS on sources that directly address the core concept
 
 **CONCEPTUAL ANSWER RULES:**
-1. Synthesize GENERAL concepts from the sources (abstract away tool-specific details)
+1. Synthesize GENERAL concepts from the relevant sources (abstract away tool-specific details)
 2. When sources mention specific tools (Pinecone, LangChain, etc.), extract the UNDERLYING CONCEPT
 3. Provide a beginner-friendly explanation of how things work in general
 4. Use source examples to ILLUSTRATE concepts, not to define them
@@ -311,10 +386,11 @@ FORMATTING:
 - Use bullet points for lists
 - Use markdown headers (## for sections, ### for subsections)
 - Structure with line breaks for readability
+- Only cite sources you actually used
 
 Requirements:
 - FIRST: Directly answer the user's specific question with general concepts
-- Cover what, why, and how (synthesized from sources)
+- Cover what, why, and how (synthesized from relevant sources only)
 - Use bullet points to organize key concepts
 - Abstract tool-specific details into general patterns`;
   }

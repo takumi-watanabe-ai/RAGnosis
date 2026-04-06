@@ -52,6 +52,7 @@ execute_sql "$PROJECT_ROOT/supabase/schema/private/market-analysis.sql" "Market 
 execute_sql "$PROJECT_ROOT/supabase/schema/private/repo-insights.sql" "Repository insights functions"
 execute_sql "$PROJECT_ROOT/supabase/schema/private/analytics-queries.sql" "Analytics query functions"
 execute_sql "$PROJECT_ROOT/supabase/schema/private/trends-analysis.sql" "Analytics trend query functions"
+execute_sql "$PROJECT_ROOT/supabase/schema/private/rag-tech-stack-sankey.sql" "RAG tech stack sankey functions"
 echo ""
 
 # 3. Deploy public schema files
@@ -64,6 +65,7 @@ execute_sql "$PROJECT_ROOT/supabase/schema/public/market-analysis.sql" "Public m
 execute_sql "$PROJECT_ROOT/supabase/schema/public/repo-insights.sql" "Public repo insights API"
 execute_sql "$PROJECT_ROOT/supabase/schema/public/analytics-queries.sql" "Public analytics API"
 execute_sql "$PROJECT_ROOT/supabase/schema/public/trends-analysis.sql" "Public trend analytics API"
+execute_sql "$PROJECT_ROOT/supabase/schema/public/rag-tech-stack-sankey.sql" "Public RAG tech stack sankey API"
 echo ""
 
 echo -e "${GREEN}========================================${NC}"

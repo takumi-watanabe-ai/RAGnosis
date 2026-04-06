@@ -90,6 +90,7 @@ export const LOG_PREFIX = {
   SUCCESS: '✅',
   ERROR: '❌',
   WARNING: '⚠️',
+  WARN: '⚠️',  // Alias for WARNING
   INFO: 'ℹ️',
   METRICS: '📊',
   RERANK: '🔀',
