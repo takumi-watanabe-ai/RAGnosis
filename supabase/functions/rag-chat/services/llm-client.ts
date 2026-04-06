@@ -1,6 +1,6 @@
 /**
  * Centralized LLM client service
- * Eliminates duplicate LLM calling code across the codebase
+ * Supports both OpenRouter (production) and Ollama (local development)
  */
 
 import { config } from '../config.ts'
@@ -18,16 +18,32 @@ export interface GenerateOptions {
   maxTokens?: number
 }
 
+type LLMProvider = 'openrouter' | 'ollama'
+
 /**
- * LLM Client for interacting with Ollama
+ * LLM Client for interacting with OpenRouter (production) or Ollama (local)
+ * Auto-detects provider based on OPENROUTER_API_KEY presence
  */
 export class LLMClient {
+  private provider: LLMProvider
   private baseUrl: string
   private model: string
+  private apiKey?: string
 
-  constructor(baseUrl?: string, model?: string) {
-    this.baseUrl = baseUrl || config.llm.url
-    this.model = model || config.llm.model
+  constructor() {
+    // Auto-detect: Use OpenRouter if API key exists, else Ollama
+    this.apiKey = config.llm.openrouter.apiKey
+    this.provider = this.apiKey ? 'openrouter' : 'ollama'
+
+    if (this.provider === 'openrouter') {
+      this.baseUrl = config.llm.openrouter.baseUrl
+      this.model = config.llm.openrouter.model
+    } else {
+      this.baseUrl = config.llm.ollama.url
+      this.model = config.llm.ollama.model
+    }
+
+    console.log(`${LOG_PREFIX.INFO} LLM Client initialized: ${this.provider} (${this.model})`)
   }
 
   /**
@@ -44,33 +60,92 @@ export class LLMClient {
     } = options
 
     try {
-      const response = await fetch(`${this.baseUrl}/api/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [{ role: 'user', content: prompt }],
-          stream: false,
-          format,
-          options: {
-            temperature,
-            num_predict: maxTokens,
-          },
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`LLM chat request failed: ${response.statusText}`)
+      if (this.provider === 'openrouter') {
+        return await this.chatOpenRouter(prompt, temperature, maxTokens, format)
+      } else {
+        return await this.chatOllama(prompt, temperature, maxTokens, format)
       }
-
-      const data = await response.json()
-      return data.message.content.trim()
     } catch (error) {
       console.error(`${LOG_PREFIX.ERROR} LLM chat failed:`, error)
       throw error
     }
+  }
+
+  /**
+   * OpenRouter chat implementation (OpenAI-compatible API)
+   */
+  private async chatOpenRouter(
+    prompt: string,
+    temperature: number,
+    maxTokens: number,
+    format: 'json' | 'text'
+  ): Promise<string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.apiKey}`,
+      'HTTP-Referer': 'https://ragnosis.com', // Optional: for rankings
+      'X-Title': 'RAGnosis', // Optional: for rankings
+    }
+
+    const body: any = {
+      model: this.model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature,
+      max_tokens: maxTokens,
+    }
+
+    // OpenRouter supports response_format for JSON mode
+    if (format === 'json') {
+      body.response_format = { type: 'json_object' }
+    }
+
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`OpenRouter API request failed: ${response.statusText} - ${errorText}`)
+    }
+
+    const data = await response.json()
+    return data.choices[0].message.content.trim()
+  }
+
+  /**
+   * Ollama chat implementation
+   */
+  private async chatOllama(
+    prompt: string,
+    temperature: number,
+    maxTokens: number,
+    format: 'json' | 'text'
+  ): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: [{ role: 'user', content: prompt }],
+        stream: false,
+        format,
+        options: {
+          temperature,
+          num_predict: maxTokens,
+        },
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Ollama chat request failed: ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    return data.message.content.trim()
   }
 
   /**
@@ -86,32 +161,82 @@ export class LLMClient {
     } = options
 
     try {
-      const response = await fetch(`${this.baseUrl}/api/generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: this.model,
-          prompt,
-          stream: false,
-          options: {
-            temperature,
-            num_predict: maxTokens,
-          },
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`LLM generate request failed: ${response.statusText}`)
+      if (this.provider === 'openrouter') {
+        return await this.generateOpenRouter(prompt, temperature, maxTokens)
+      } else {
+        return await this.generateOllama(prompt, temperature, maxTokens)
       }
-
-      const data = await response.json()
-      return data.response.trim()
     } catch (error) {
       console.error(`${LOG_PREFIX.ERROR} LLM generate failed:`, error)
       throw error
     }
+  }
+
+  /**
+   * OpenRouter generate implementation (using chat completions API)
+   */
+  private async generateOpenRouter(
+    prompt: string,
+    temperature: number,
+    maxTokens: number
+  ): Promise<string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.apiKey}`,
+      'HTTP-Referer': 'https://ragnosis.com',
+      'X-Title': 'RAGnosis',
+    }
+
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: this.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature,
+        max_tokens: maxTokens,
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`OpenRouter API request failed: ${response.statusText} - ${errorText}`)
+    }
+
+    const data = await response.json()
+    return data.choices[0].message.content.trim()
+  }
+
+  /**
+   * Ollama generate implementation
+   */
+  private async generateOllama(
+    prompt: string,
+    temperature: number,
+    maxTokens: number
+  ): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: this.model,
+        prompt,
+        stream: false,
+        options: {
+          temperature,
+          num_predict: maxTokens,
+        },
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Ollama generate request failed: ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    return data.response.trim()
   }
 
   /**

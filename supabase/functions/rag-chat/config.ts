@@ -3,7 +3,7 @@
  * Single source of truth for all runtime config.
  */
 
-import CONFIG from '../_shared/config.json' with { type: 'json' }
+import CONFIG from "../_shared/config.json" with { type: "json" };
 
 export const config = {
   // Embedding model configuration
@@ -13,20 +13,31 @@ export const config = {
   },
 
   // LLM configuration (cost-optimized)
+  // Auto-detects provider: OpenRouter if API key exists, else Ollama
   llm: {
-    url: Deno.env.get('OLLAMA_URL') || 'http://ragnosis_ollama:11434',
-    model: Deno.env.get('OLLAMA_MODEL') || 'qwen2.5:3b-instruct',
+    // OpenRouter configuration (production - auto-used if API key exists)
+    openrouter: {
+      apiKey: Deno.env.get("OPENROUTER_API_KEY"),
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: Deno.env.get("OPENROUTER_MODEL") || "",
+    },
+
+    // Ollama configuration (local development - fallback when no API key)
+    ollama: {
+      url: Deno.env.get("OLLAMA_URL") || "http://ragnosis_ollama:11434",
+      model: Deno.env.get("OLLAMA_MODEL") || "qwen2.5:3b-instruct",
+    },
 
     // Query planning (minimal tokens for JSON output)
     planning: {
-      maxTokens: 250,      // Increased for complete JSON with reasoning
+      maxTokens: 250, // Increased for complete JSON with reasoning
       temperature: 0.3,
     },
 
     // Answer generation (optimized for cost and completeness)
     answer: {
-      maxTokens: 1000,     // ~700 words, enough for comprehensive answers
-      targetWords: 500,    // Explicit guidance for LLM
+      maxTokens: 1000, // ~700 words, enough for comprehensive answers
+      targetWords: 500, // Explicit guidance for LLM
       temperature: 0.3,
     },
   },
@@ -34,41 +45,41 @@ export const config = {
   // Search and context configuration
   search: {
     // Candidate fetching for reranking
-    candidateCount: 50,       // Fetch 60 candidates from each method (120 total for RRF) - increased for better recall
+    candidateCount: 50, // Fetch 60 candidates from each method (120 total for RRF) - increased for better recall
 
     // Final results to return (regardless of limit param)
-    finalResultCount: 20,     // Return top 20 after RRF fusion
+    finalResultCount: 20, // Return top 20 after RRF fusion
 
     // Multiple chunks per URL (for chunked documents)
-    maxChunksPerUrl: 1,       // Keep up to 3 relevant chunks per URL
+    maxChunksPerUrl: 1, // Keep up to 3 relevant chunks per URL
 
     // Context sizing (token-optimized)
     context: {
-      primaryExcerpt: 400,     // Top 2 sources get full context
-      secondaryExcerpt: 150,   // Sources 3-20 get moderate context
-      descriptionMax: 150,     // Description truncation
+      primaryExcerpt: 400, // Top 2 sources get full context
+      secondaryExcerpt: 150, // Sources 3-20 get moderate context
+      descriptionMax: 150, // Description truncation
     },
 
     // Reranking config
     reranker: {
       // Cross-encoder config (controlled by 'cross_encoder_reranking' feature flag)
       crossEncoder: {
-        maxChars: 500,         // Max chars from doc for cross-encoding
-        maxCandidates: 50,     // Limit candidates to reduce CPU load
+        maxChars: 500, // Max chars from doc for cross-encoding
+        maxCandidates: 50, // Limit candidates to reduce CPU load
       },
 
       // RRF fusion weights (used in hybrid search merge)
       fusion: {
-        vectorWeight: 0.6,    // 60% weight for semantic search
-        bm25Weight: 0.4,      // 40% weight for keyword search (higher due to noun filtering)
+        vectorWeight: 0.6, // 60% weight for semantic search
+        bm25Weight: 0.4, // 40% weight for keyword search (higher due to noun filtering)
       },
     },
   },
 
   // Ranking query configuration (for top models/repos queries)
   ranking: {
-    candidateCount: 100,      // Fetch top 100 by metric (downloads/stars)
-    finalResultCount: 20,     // Rerank to top 20 based on query relevance
+    candidateCount: 100, // Fetch top 100 by metric (downloads/stars)
+    finalResultCount: 20, // Rerank to top 20 based on query relevance
   },
 
   // Feature flags - DEFAULT VALUES ONLY (fallback when DB unavailable)
@@ -79,30 +90,32 @@ export const config = {
     // When enabled: LLM extracts intent and applies weights to boost relevant doc types
     // When disabled: Simple hybrid search across all doc types (no weights)
     queryPlanner: {
-      enabled: true,           // Default: OFF
+      enabled: true, // Default: OFF
     },
 
     // Query expansion - generate semantic variations to improve recall
     queryExpansion: {
-      enabled: false,          // Default: OFF
-      maxVariations: 2,        // Number of query variations to generate
+      enabled: false, // Default: OFF
+      maxVariations: 2, // Number of query variations to generate
     },
   },
 
   // Database configuration
   database: {
-    url: Deno.env.get('DB_URL') || Deno.env.get('SUPABASE_URL')!,
-    serviceRoleKey: Deno.env.get('DB_SERVICE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    url: Deno.env.get("DB_URL") || Deno.env.get("SUPABASE_URL")!,
+    serviceRoleKey:
+      Deno.env.get("DB_SERVICE_KEY") ||
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   },
 
   // CORS configuration
   cors: {
-    allowOrigin: '*',
-    allowHeaders: 'authorization, x-client-info, apikey, content-type',
-  }
-} as const
+    allowOrigin: "*",
+    allowHeaders: "authorization, x-client-info, apikey, content-type",
+  },
+} as const;
 
 // Validation: Ensure required config is present
 if (!config.database.url || !config.database.serviceRoleKey) {
-  throw new Error('Missing required database configuration')
+  throw new Error("Missing required database configuration");
 }

@@ -64,6 +64,8 @@ evaluation/results/
 .serena/
 
 # Frontend build artifacts
+web/.env*
+!web/.env.example
 web/.eslintcache
 web/.next/
 web/node_modules/
