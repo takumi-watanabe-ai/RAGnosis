@@ -18,7 +18,6 @@ import {
 import { SourceCard } from "./SourceCard";
 import { ProgressSteps } from "./ProgressSteps";
 import type { SearchResult } from "@/lib/api";
-import type { SettingsConfig } from "./Settings";
 import { preprocessCitationMarkers } from "@/lib/citation-utils";
 
 interface ProgressStep {
@@ -40,7 +39,6 @@ interface Message {
 
 interface SimpleChatInterfaceProps {
   initialQuestion?: string | null;
-  settings: SettingsConfig;
 }
 
 export interface SimpleChatInterfaceHandle {
@@ -51,7 +49,7 @@ export interface SimpleChatInterfaceHandle {
 export const SimpleChatInterface = forwardRef<
   SimpleChatInterfaceHandle,
   SimpleChatInterfaceProps
->(({ initialQuestion, settings }, ref) => {
+>(({ initialQuestion }, ref) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -159,39 +157,7 @@ export const SimpleChatInterface = forwardRef<
       });
   }, []);
 
-  // Auto-expand sources based on settings
-  useEffect(() => {
-    if (settings.showSources) {
-      setExpandedSources((prevExpanded) => {
-        const newExpanded = new Set(prevExpanded);
-        let hasChanges = false;
-
-        messages.forEach((message) => {
-          if (
-            message.role === "assistant" &&
-            message.sources &&
-            message.sources.length > 0 &&
-            !prevExpanded.has(message.id)
-          ) {
-            newExpanded.add(message.id);
-            hasChanges = true;
-
-            // Also expand all source cards for this message
-            setExpandedSourceCards((prev) => {
-              const newSet = new Set(prev);
-              message.sources!.forEach((source) => {
-                const marker = source.marker?.replace(/[\[\]]/g, "") || "";
-                newSet.add(`${message.id}-${marker}`);
-              });
-              return newSet;
-            });
-          }
-        });
-
-        return hasChanges ? newExpanded : prevExpanded;
-      });
-    }
-  }, [messages, settings.showSources]);
+  // Sources start collapsed - users can click to expand
 
   useEffect(() => {
     if (initialQuestion && !initialQuestionSentRef.current) {
@@ -251,7 +217,7 @@ export const SimpleChatInterface = forwardRef<
     setMessages((prev) => [...prev, assistantMessage]);
 
     try {
-      const stream = sendChatMessageStream(text, settings.topK);
+      const stream = sendChatMessageStream(text);
 
       for await (const event of stream) {
         if (event.type === "progress") {
@@ -400,7 +366,7 @@ export const SimpleChatInterface = forwardRef<
               </p>
 
               {/* Ecosystem Stats */}
-              {ecosystemStats && (
+              {ecosystemStats ? (
                 <div className="flex flex-wrap gap-6 mb-16 text-xs text-stone uppercase tracking-wider font-normal">
                   <div className="border-b border-stone-border pb-1">
                     {ecosystemStats.total_models.toLocaleString()} Hugging Face
@@ -412,6 +378,12 @@ export const SimpleChatInterface = forwardRef<
                   <div className="border-b border-stone-border pb-1">
                     {ecosystemStats.total_articles.toLocaleString()} Articles
                   </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-6 mb-16 text-xs text-stone uppercase tracking-wider font-normal">
+                  <div className="h-4 w-40 bg-stone-border rounded animate-pulse" />
+                  <div className="h-4 w-32 bg-stone-border rounded animate-pulse" />
+                  <div className="h-4 w-28 bg-stone-border rounded animate-pulse" />
                 </div>
               )}
 

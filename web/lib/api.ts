@@ -49,10 +49,7 @@ export interface StreamEvent {
   data?: Record<string, unknown>;
 }
 
-export async function sendChatMessage(
-  query: string,
-  topK: number = 5,
-): Promise<ChatResponse> {
+export async function sendChatMessage(query: string): Promise<ChatResponse> {
   const edgeFunctionUrl =
     process.env.NEXT_PUBLIC_EDGE_FUNCTION_URL ||
     "http://localhost:54321/functions/v1/rag-chat";
@@ -73,7 +70,7 @@ export async function sendChatMessage(
   const response = await fetch(edgeFunctionUrl, {
     method: "POST",
     headers,
-    body: JSON.stringify({ query, top_k: topK, stream: false }),
+    body: JSON.stringify({ query, stream: false }),
   });
 
   if (!response.ok) {
@@ -91,7 +88,6 @@ export async function sendChatMessage(
  */
 export async function* sendChatMessageStream(
   query: string,
-  topK: number = 5,
 ): AsyncIterableIterator<StreamEvent> {
   const edgeFunctionUrl =
     process.env.NEXT_PUBLIC_EDGE_FUNCTION_URL ||
@@ -112,7 +108,7 @@ export async function* sendChatMessageStream(
   const response = await fetch(edgeFunctionUrl, {
     method: "POST",
     headers,
-    body: JSON.stringify({ query, top_k: topK, stream: true }),
+    body: JSON.stringify({ query, stream: true }),
   });
 
   if (!response.ok) {

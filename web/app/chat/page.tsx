@@ -7,18 +7,11 @@ import {
   SimpleChatInterfaceHandle,
 } from "@/components/SimpleChatInterface";
 import { QuickQuestions } from "@/components/QuickQuestions";
-import { Settings, type SettingsConfig } from "@/components/Settings";
 import { Header } from "@/components/Header";
 
 function ChatPageContent() {
   const searchParams = useSearchParams();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [settings, setSettings] = useState<SettingsConfig>({
-    showSources: false,
-    topK: 5,
-    temperature: 0.7,
-    maxTokens: 500,
-  });
   const chatRef = useRef<SimpleChatInterfaceHandle>(null);
 
   const handleQuestionSelect = (question: string) => {
@@ -41,9 +34,6 @@ function ChatPageContent() {
           <div className="overflow-y-auto px-6 py-8">
             <QuickQuestions onSelectQuestion={handleQuestionSelect} />
           </div>
-          <div className="mt-auto px-6 h-[76px] flex items-center border-t border-stone-border">
-            <Settings settings={settings} onSettingsChange={setSettings} />
-          </div>
         </aside>
 
         {/* Mobile Sidebar */}
@@ -65,9 +55,6 @@ function ChatPageContent() {
               <div className="overflow-y-auto px-6 py-8">
                 <QuickQuestions onSelectQuestion={handleQuestionSelect} />
               </div>
-              <div className="mt-auto px-6 h-[76px] flex items-center border-t border-stone-border">
-                <Settings settings={settings} onSettingsChange={setSettings} />
-              </div>
             </aside>
           </div>
         )}
@@ -79,7 +66,6 @@ function ChatPageContent() {
             <SimpleChatInterface
               ref={chatRef}
               initialQuestion={searchParams.get("q")}
-              settings={settings}
             />
           </div>
         </main>
