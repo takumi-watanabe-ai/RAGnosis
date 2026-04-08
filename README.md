@@ -1,138 +1,101 @@
-# RAGnosis
+<div align="center">
+  <img src="web/public/logo.svg" alt="RAGnosis Logo" width="200" />
 
-> **AI-powered market intelligence for RAG technology decisions**
+  # RAGnosis
+
+  > **Agentic AI system for RAG technology intelligence**
+</div>
 
 A production RAG system that answers questions about RAG technology itself—combining quantitative metrics from HuggingFace and GitHub with expert knowledge from official documentation. Built to showcase sophisticated RAG patterns that go beyond basic vector search.
 
-**What makes this interesting:** Most RAG tutorials do naive vector search and call it done. This system demonstrates query planning, hybrid search, smart reranking, and cost optimization—techniques you need for production systems.
+**What makes this interesting:** Most RAG tutorials do naive vector search and call it done. This system demonstrates agentic planning, hybrid search, RRF fusion, and cost optimization—techniques you need for production systems.
+
+## Architecture Overview
+
+<div align="center">
+  <img src="docs/architecture-diagram.svg" alt="RAGnosis Architecture" width="100%" />
+</div>
+
+**Flow:**
+1. **Data Collection** - GitHub Actions scrapes docs, fetches HuggingFace/GitHub metrics
+2. **Embedding Pipeline** - Python processes content and generates vector embeddings
+3. **User Query** - Next.js frontend sends questions to Deno edge function
+4. 5. **Query Planning** - LLM analyzes intent and determines search strategy
+6. 7. **Query Expanding** - Generates semantic variations (optional, disabled by default) 
+8. **Hybrid Search & RRF Merge** - Parallel vector and keyword searches combined via weighted fusion
+9. **Reranking** - Optional cross-encoder refinement (feature-flagged)
+10. 11. **Answer Generation** - LLM synthesizes response with citations
+12. 13. **Answer Evaluation** - Quality assessment across 4 dimensions (relevancy, accuracy, clarity, specificity) 
+14. **Streaming Response** - Progressive results sent back to frontend
 
 ---
 
-## What Makes It Smart
+## Why It's Different
 
-**Query Planning** - Before searching anything, an LLM analyzes what you're actually asking:
-- Market data questions → Route to models/repos with metrics
-- Implementation questions → Route to documentation with code examples
-- Comparisons → Fetch data from multiple sources, synthesize side-by-side
-- Troubleshooting → Match problem patterns, return diagnostic guides
+| Basic RAG | This System |
+|-----------|-------------|
+| Jump straight to vector search | **Agentic planning** - LLM analyzes intent, routes to right sources |
+| Vector search only | **Hybrid search** - Vector + keyword in parallel, RRF merge |
+| Return raw results | **Smart fusion** - RRF scoring, optional cross-encoder |
+| Generic answers | **Context-aware** - Market lists, how-tos, comparisons |
+| Enrich everything upfront | **Lazy enrichment** - Fetch 50 candidates → rerank → return top 20 |
 
-**Hybrid Search** - Combines complementary approaches because neither works alone:
-- Vector search finds conceptual matches ("retrieval quality" ≈ "improving accuracy")
-- Keyword search finds exact matches ("Supabase/gte-small" finds that specific model)
-- Searches across documentation, HuggingFace models, and GitHub repos simultaneously
+## Agentic Components
 
-**Smart Reranking** - Initial search returns candidates, BM25 reranking finds what matters:
-- Scores based on query term coverage (not just vector similarity)
-- 10x boost for title matches (signals high relevance)
-- Squared penalty for missing important terms (filters out partial matches)
-- Example: "Supabase/gte-small" query ranks that exact model above generic embedding articles
+| Component | Purpose | Implementation |
+|-----------|---------|----------------|
+| **Query Planner** | Analyzes user intent | Routes to docs vs metrics; extracts nouns for filtering |
+| **Query Expander** | Enhances search coverage | Generates 2 semantic variations (disabled by default) |
+| **Answer Generator** | Synthesizes response | Context-aware prompts by intent type |
+| **Answer Evaluator** | Quality assessment | LLM-based evaluation (relevancy, accuracy, clarity, specificity) |
 
-**Context-Aware Answers** - Different questions need different answer formats:
-- Market questions → Ranked lists with GitHub stars, HuggingFace downloads, trend data
-- How-to questions → Step-by-step guides with code snippets
-- Troubleshooting → Problem diagnosis + actionable solutions
-- Comparisons → Side-by-side feature/performance analysis
+**Search Pipeline:**
+- Query expansion creates 3 variations (original + 2 semantic alternatives)
+- Each variation performs hybrid search: 50 from vector + 50 from keyword
+- RRF merge across all results with weighted fusion (60% vector, 40% keyword)
+- Optional cross-encoder reranking (feature-flagged)
+- Return top 20 results
 
----
-
-## Architecture & Design Decisions
-
-**The Three-Stage Pipeline:**
-
-1. **Query Planning** - LLM analyzes the question to understand intent before searching
-2. **Parallel Execution** - Simultaneous searches across different data sources, then rerank and enrich
-3. **Answer Synthesis** - LLM generates structured responses with proper citations
-
-**Why This Approach?**
-
-Most RAG systems jump straight to vector search. That fails for questions like "What are the top embedding models?" because:
-- Vector search finds *similar* content, not ranked lists
-- You need structured data (GitHub stars, HuggingFace downloads) not just text content
-- Different questions need different data sources
-
-By having the LLM analyze the query first, the system routes to the right data and formats answers appropriately.
-
-**Cost Optimization:**
-
-Instead of stuffing all search results (with full metadata) into the LLM context, this system:
-1. Does initial search with minimal data (title + content only)
-2. Reranks to find the actual top 5
-3. Only then enriches those 5 with expensive SQL joins for full metadata
-
-Result: ~60% token reduction compared to enriching everything upfront.
-
----
-
-## Key Implementation Highlights
-
-**Dual Vector Collections:**
-- Documentation: Official docs from 9 sources (LangChain, LlamaIndex, Pinecone, HF, etc.)
-- Models/Repos: 61 entries with rich metadata (stars, downloads, trends)
-- Single query searches both collections in parallel via PostgreSQL CTEs
-
-**Full-Text + Vector Indexes:**
-```sql
--- Vector search with pgvector
-CREATE INDEX ON documents USING ivfflat (embedding vector_cosine_ops);
-
--- Keyword search with GIN (on name + description)
--- No separate text column needed
-```
-
-**BM25 Reranking in TypeScript:**
-- Custom implementation that understands multi-word queries
-- Title boosting (10x) + term coverage scoring
-- Runs post-retrieval to refine top candidates
-
-**Automated Data Pipeline:**
-- Daily: HuggingFace model stats, GitHub repo metrics, Google Trends
-- Weekly: Documentation scraping from 9 official sources
-- Embeddings generated on-demand for new content
-- Fully automated via GitHub Actions
+**Data:** 3K+ doc chunks (LangChain, LlamaIndex, Pinecone, etc.) • 4K+ HF models • 4K+ GitHub repos • Trends data
 
 ---
 
 ## Tech Stack
 
-| Component | Choice | Why |
-|-----------|--------|-----|
-| **Runtime** | Deno (Supabase Edge Functions) | Fast cold starts, TypeScript native, easy local dev |
-| **Database** | PostgreSQL + pgvector | Simpler than dedicated vector DBs, powerful for hybrid search |
-| **Vector Search** | pgvector cosine similarity | Native Postgres extension, handles 384-dim embeddings efficiently |
-| **Keyword Search** | PostgreSQL GIN full-text | Fast exact matching, combines naturally with vector search |
-| **LLM** | Ollama qwen2.5:3b-instruct | Small model sufficient for query analysis, runs locally |
-| **Embeddings** | Supabase.ai.Session (gte-small) | 384 dimensions, good quality/speed tradeoff |
-| **Reranking** | Custom BM25 (TypeScript) | Better than pure vector similarity for keyword-heavy queries |
-| **Frontend** | Next.js + assistant-ui | Modern React streaming UI, Vercel-deployable |
-| **Data Pipeline** | Python + GitHub Actions | Flexible scraping, automated scheduling |
+| Layer | Technology | Why This Choice |
+|-------|-----------|-----------------|
+| **Frontend** | Next.js + assistant-ui | Streaming UI with thought process visibility, analytics dashboard, source attribution |
+| **Backend** | Deno (Supabase Edge Functions) | Fast cold starts, TypeScript-native, simple deployment |
+| **Database** | PostgreSQL + pgvector | Hybrid search in one DB, no separate vector store needed |
+| **Vector Search** | pgvector HNSW (cosine) | Graph-based index, consistent performance, no tuning needed |
+| **Keyword Search** | PostgreSQL GIN + ts_rank | Native full-text search, combines with vector via CTEs |
+| **LLM** | Ollama qwen2.5:3b / OpenRouter | Query planning & synthesis, auto-detects based on API key |
+| **Embeddings** | Supabase AI (gte-small) | 384-dim, quality/speed balance, serverless |
+| **Fusion** | Reciprocal Rank Fusion (RRF) | Merges vector + keyword results with configurable weights |
+| **Reranking** | Optional Cross-Encoder | Feature-flagged semantic reranking using gte-small |
+| **Data Pipeline** | Python 3.13 + GitHub Actions | Flexible scraping, automated scheduling |
+
+## Quick Start
+
+```bash
+# Setup local environment (Supabase + Ollama + models)
+make setup
+
+# Collect data (HuggingFace + GitHub market data)
+make pipeline
+
+# Generate embeddings (processes docs into vectors)
+make embed
+
+# Run edge function locally
+make chat
+
+# Run Next.js frontend
+make web
+```
+
+See `Makefile` for all commands including evaluation tools.
 
 ---
 
-## What I'd Build Next
-
-**Implemented:**
-- ✅ Query planning with LLM routing
-- ✅ Dual vector search (docs + models/repos)
-- ✅ Custom BM25 reranking
-- ✅ Post-rerank metadata enrichment
-- ✅ Automated data collection (4K+ articles)
-- ✅ Modern Next.js frontend
-
-**Next Steps:**
-- Cross-encoder reranking (Cohere or local model)
-- Semantic caching for common queries
-- ArXiv papers + HackerNews discussions
-- Analytics dashboard (query patterns, answer quality)
-- A/B testing framework for RAG experiments
-
----
-
-## Documentation
-
-- [Example Queries](docs/example_queries.md) - Query patterns & expected routing behavior
-- [Database Schema](supabase/migrations/) - PostgreSQL + pgvector design
-- [Edge Function](supabase/functions/rag-chat/) - RAG implementation details
-
----
-
-**Built to showcase:** Production RAG patterns • Query understanding • Hybrid search • Cost optimization • Automated data pipelines
+**Built to demonstrate:** Agentic RAG • Hybrid search • RRF fusion • Feature-flagged architecture • Cost optimization
