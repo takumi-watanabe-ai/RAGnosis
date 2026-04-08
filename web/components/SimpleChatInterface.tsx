@@ -404,7 +404,7 @@ export const SimpleChatInterface = forwardRef<
               {ecosystemStats && (
                 <div className="flex flex-wrap gap-6 mb-16 text-xs text-stone uppercase tracking-wider font-normal">
                   <div className="border-b border-stone-border pb-1">
-                    {ecosystemStats.total_models.toLocaleString()} HF Models
+                    {ecosystemStats.total_models.toLocaleString()} Hugging Face Models
                   </div>
                   <div className="border-b border-stone-border pb-1">
                     {ecosystemStats.total_repos.toLocaleString()} GitHub Repos

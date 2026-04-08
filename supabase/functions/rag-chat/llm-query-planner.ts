@@ -5,17 +5,22 @@
  * Always searches ALL sources, but uses LLM to extract intent and weights.
  */
 
-import type { QueryInsight, PrimaryIntent, DocTypeWeights, QueryPlan } from './types.ts'
-import { config } from './config.ts'
-import { getLLMClient } from './services/llm-client.ts'
-import { getFeatureFlagService } from './services/feature-flags.ts'
-import { THRESHOLDS, WEIGHTS, LOG_PREFIX } from './utils/constants.ts'
+import type {
+  QueryInsight,
+  PrimaryIntent,
+  DocTypeWeights,
+  QueryPlan,
+} from "./types.ts";
+import { config } from "./config.ts";
+import { getLLMClient } from "./services/llm-client.ts";
+import { getFeatureFlagService } from "./services/feature-flags.ts";
+import { THRESHOLDS, WEIGHTS, LOG_PREFIX } from "./utils/constants.ts";
 
 interface LLMInsightResponse {
-  primary_intent: PrimaryIntent
-  doc_type_weights: DocTypeWeights
-  nouns?: string[] | null
-  expanded_query?: string | null
+  primary_intent: PrimaryIntent;
+  doc_type_weights: DocTypeWeights;
+  nouns?: string[] | null;
+  expanded_query?: string | null;
 }
 
 /**
@@ -24,63 +29,70 @@ interface LLMInsightResponse {
  */
 async function getQueryInsight(
   query: string,
-  supabase: any
+  supabase: any,
 ): Promise<QueryInsight | null> {
   try {
     // Check if query planner is enabled (from database)
-    const featureFlags = getFeatureFlagService(supabase)
-    const isEnabled = await featureFlags.isEnabled('query_planner')
+    const featureFlags = getFeatureFlagService(supabase);
+    const isEnabled = await featureFlags.isEnabled("query_planner");
 
     if (!isEnabled) {
-      return null
+      return null;
     }
 
     // Get planner config to check if weights should be used
-    const plannerConfig = await featureFlags.getConfig<{ model?: string; use_weights?: boolean }>('query_planner')
-    const useWeights = plannerConfig.use_weights !== false  // Default to true
+    const plannerConfig = await featureFlags.getConfig<{
+      model?: string;
+      use_weights?: boolean;
+    }>("query_planner");
+    const useWeights = plannerConfig.use_weights !== false; // Default to true
 
     // Fetch minimal metadata from DB
-    const { data: meta, error } = await supabase.rpc('get_filter_options')
+    const { data: meta, error } = await supabase.rpc("get_filter_options");
 
     if (error || !meta) {
-      console.error(`${LOG_PREFIX.WARNING} Metadata fetch failed:`, error)
-      return null
+      console.error(`${LOG_PREFIX.WARNING} Metadata fetch failed:`, error);
+      return null;
     }
 
     // Build LLM prompt for query understanding
-    const prompt = buildInsightPrompt(query, meta)
+    const prompt = buildInsightPrompt(query, meta);
 
     // Call LLM with automatic JSON parsing
-    const llmClient = getLLMClient()
-    const llmResponse = await llmClient.chatJson<LLMInsightResponse>(prompt)
+    const llmClient = getLLMClient();
+    const llmResponse = await llmClient.chatJson<LLMInsightResponse>(prompt);
 
     if (!llmResponse) {
-      console.error(`${LOG_PREFIX.WARNING} LLM insight extraction failed`)
-      return null
+      console.error(`${LOG_PREFIX.WARNING} LLM insight extraction failed`);
+      return null;
     }
 
     // Validate weights (ensure they're between 0 and 1)
-    const weights = normalizeWeights(llmResponse.doc_type_weights)
+    const weights = normalizeWeights(llmResponse.doc_type_weights);
 
     const insight: QueryInsight = {
       primary_intent: llmResponse.primary_intent,
-      doc_type_weights: useWeights ? weights : undefined,  // Only include weights if enabled
+      doc_type_weights: useWeights ? weights : undefined, // Only include weights if enabled
       nouns: llmResponse.nouns || undefined,
       expanded_query: llmResponse.expanded_query || undefined,
       confidence: 0.8,
       reason: `Intent: ${llmResponse.primary_intent}`,
-    }
+    };
 
-    console.log(`${LOG_PREFIX.PLAN} Query Insight:`, JSON.stringify(insight, null, 2))
+    console.log(
+      `${LOG_PREFIX.PLAN} Query Insight:`,
+      JSON.stringify(insight, null, 2),
+    );
     if (!useWeights) {
-      console.log(`${LOG_PREFIX.INFO} Doc type weighting disabled via feature flag config`)
+      console.log(
+        `${LOG_PREFIX.INFO} Doc type weighting disabled via feature flag config`,
+      );
     }
 
-    return insight
-
+    return insight;
   } catch (error) {
-    console.error(`${LOG_PREFIX.ERROR} Query insight error:`, error)
-    return null
+    console.error(`${LOG_PREFIX.ERROR} Query insight error:`, error);
+    return null;
   }
 }
 
@@ -88,13 +100,14 @@ async function getQueryInsight(
  * Build LLM prompt for extracting query insights
  */
 function buildInsightPrompt(query: string, meta: any): string {
-  const availableTasks = meta.tasks?.slice(0, THRESHOLDS.MAX_TASKS_IN_PROMPT) || []
+  const availableTasks =
+    meta.tasks?.slice(0, THRESHOLDS.MAX_TASKS_IN_PROMPT) || [];
 
   return `Analyze this query and extract insights for weighted multi-source search.
 
 Query: "${query}"
 
-Available model tasks: ${availableTasks.join(', ')}
+Available model tasks: ${availableTasks.join(", ")}
 
 Your job:
 1. Understand the PRIMARY INTENT
@@ -137,19 +150,25 @@ Respond with VALID JSON only (no trailing text):
   },
   "nouns": ["key", "terms", "entities"],
   "expanded_query": null
-}`
+}`;
 }
 
 /**
  * Normalize weights to ensure they're between 0 and 1
  */
 function normalizeWeights(weights: DocTypeWeights): DocTypeWeights {
-  const defaults = WEIGHTS.DEFAULT_DOC_WEIGHTS
+  const defaults = WEIGHTS.DEFAULT_DOC_WEIGHTS;
   return {
-    knowledge_base: Math.max(0, Math.min(1, weights.knowledge_base || defaults.knowledge_base)),
+    knowledge_base: Math.max(
+      0,
+      Math.min(1, weights.knowledge_base || defaults.knowledge_base),
+    ),
     hf_model: Math.max(0, Math.min(1, weights.hf_model || defaults.hf_model)),
-    github_repo: Math.max(0, Math.min(1, weights.github_repo || defaults.github_repo)),
-  }
+    github_repo: Math.max(
+      0,
+      Math.min(1, weights.github_repo || defaults.github_repo),
+    ),
+  };
 }
 
 /**
@@ -159,100 +178,143 @@ function normalizeWeights(weights: DocTypeWeights): DocTypeWeights {
 export async function createQueryPlan(
   query: string,
   top_k: number,
-  supabase: any
+  supabase: any,
 ): Promise<QueryPlan> {
   // Get LLM insights (returns null if disabled or fails)
-  const insight = await getQueryInsight(query, supabase)
+  const insight = await getQueryInsight(query, supabase);
 
   // Map primary intent to legacy QueryIntent
-  const intent = insight ? mapPrimaryIntentToQueryIntent(insight.primary_intent) : 'conceptual'
+  const intent = insight
+    ? mapPrimaryIntentToQueryIntent(insight.primary_intent)
+    : "conceptual";
 
   // Smart routing for find_tool intent
-  if (insight?.primary_intent === 'find_tool') {
-    const weights = insight.doc_type_weights
-    const preferModels = weights && weights.hf_model > weights.github_repo
+  if (insight?.primary_intent === "find_tool") {
+    const weights = insight.doc_type_weights;
+    const preferModels = weights && weights.hf_model > weights.github_repo;
 
     // Detect pure discovery queries (top, best, popular, etc.)
-    const isPureDiscovery = /^(what are |which are |show me )?(the )?(top|best|most popular|popular|leading|trending|recommended|highest rated)/i.test(query.trim())
+    const isPureDiscovery =
+      /^(what are |which are |show me )?(the )?(top|best|most popular|popular|leading|trending|recommended|highest rated)/i.test(
+        query.trim(),
+      );
 
     if (isPureDiscovery) {
-      // PURE DISCOVERY: Route to ranking endpoints with task filtering
+      // PURE DISCOVERY: Route to multiple diverse sources for comprehensive results
       // Extract task/category from query using LLM nouns
-      const taskFilter = insight?.nouns?.[0] || null
-      
-      const dataSource = preferModels
+      const taskFilter = insight?.nouns?.[0] || null;
+
+      // Build diverse data sources array
+      const dataSources = [];
+
+      // Primary source: Top by popularity (downloads/stars)
+      const primarySource = preferModels
         ? {
-            source: 'top_models_by_downloads' as const,
-            params: {
-              query: taskFilter || query, // Use extracted noun for filtering
-              limit: top_k,
-              task_filter: taskFilter // Will be used for task-based filtering
-            }
-          }
-        : {
-            source: 'top_repos_by_stars' as const,
+            source: "top_models_by_downloads" as const,
             params: {
               query: taskFilter || query,
-              limit: top_k,
-              topic_filter: taskFilter // Will be used for topic-based filtering
-            }
+              limit: Math.floor(top_k * 0.6), // 60% from downloads
+              task_filter: taskFilter,
+            },
           }
+        : {
+            source: "top_repos_by_stars" as const,
+            params: {
+              query: taskFilter || query,
+              limit: Math.floor(top_k * 0.6), // 60% from stars
+              topic_filter: taskFilter,
+            },
+          };
+      dataSources.push(primarySource);
 
-      console.log(`${LOG_PREFIX.PLAN} Pure discovery query - routing to ${dataSource.source}${taskFilter ? ` with filter: ${taskFilter}` : ''}`)
+      // Secondary source: Trending (what's hot now)
+      if (taskFilter) {
+        dataSources.push({
+          source: "google_trends" as const,
+          params: {
+            query: taskFilter,
+            limit: Math.floor(top_k * 0.2), // 20% from trends
+          },
+        });
+      }
+
+      // Tertiary source: Semantic search for context/documentation
+      dataSources.push({
+        source: "vector_search_unified" as const,
+        params: {
+          query: query,
+          limit: Math.floor(top_k * 0.2), // 20% from semantic search
+          doc_type_weights: weights,
+        },
+      });
+
+      console.log(
+        `${LOG_PREFIX.PLAN} Pure discovery query - routing to ${dataSources.length} diverse sources${taskFilter ? ` with filter: ${taskFilter}` : ""}`,
+      );
 
       return {
         intent,
         confidence: insight?.confidence || 1.0,
         is_valid: true,
-        reason: `Discovery query - ranking by ${preferModels ? 'downloads' : 'stars'}${taskFilter ? ` filtered by "${taskFilter}"` : ''}`,
-        data_sources: [dataSource],
-        insight: insight || undefined
-      }
+        reason: `Discovery query - diverse sources: popularity, trending, and documentation`,
+        data_sources: dataSources,
+        insight: insight || undefined,
+      };
     }
 
     // SEMANTIC SEARCH: Query has specific context, use weighted semantic search
-    console.log(`${LOG_PREFIX.PLAN} Contextual tool query - using semantic search with augmentation`)
+    console.log(
+      `${LOG_PREFIX.PLAN} Contextual tool query - using semantic search with augmentation`,
+    );
   }
 
   // Default: use vector_search_unified for semantic matching + diversification
   // Doc_type_weights guide relevance via augmentation and retrieval weighting
   const dataSource = {
-    source: 'vector_search_unified' as const,
+    source: "vector_search_unified" as const,
     params: {
       query: insight?.expanded_query || query,
       limit: top_k,
       ...(insight && {
         doc_type_weights: insight.doc_type_weights,
-        nouns: insight.nouns
-      })
-    }
-  }
+        nouns: insight.nouns,
+      }),
+    },
+  };
 
   return {
     intent,
     confidence: insight?.confidence || 1.0,
     is_valid: true,
-    reason: insight?.reason || 'Multi-source semantic search with weighted retrieval',
+    reason:
+      insight?.reason || "Multi-source semantic search with weighted retrieval",
     data_sources: [dataSource],
-    insight: insight || undefined
-  }
+    insight: insight || undefined,
+  };
 }
 
 /**
  * Map new PrimaryIntent to legacy QueryIntent
  */
-function mapPrimaryIntentToQueryIntent(primary: PrimaryIntent): 'market_intelligence' | 'implementation' | 'troubleshooting' | 'comparison' | 'conceptual' {
+function mapPrimaryIntentToQueryIntent(
+  primary: PrimaryIntent,
+):
+  | "market_intelligence"
+  | "implementation"
+  | "troubleshooting"
+  | "comparison"
+  | "conceptual" {
   switch (primary) {
-    case 'find_tool':
-      return 'market_intelligence'
-    case 'implement':
-      return 'implementation'
-    case 'troubleshoot':
-      return 'troubleshooting'
-    case 'compare':
-      return 'comparison'
-    case 'learn':
+    case "find_tool":
+      return "market_intelligence";
+    case "implement":
+      return "implementation";
+    case "troubleshoot":
+      return "troubleshooting";
+    case "compare":
+      return "comparison";
+    case "learn":
     default:
-      return 'conceptual'
+      return "conceptual";
   }
 }
