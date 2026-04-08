@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="web/public/logo.svg" alt="RAGnosis Logo" width="200" />
+  <img src="docs/logo.png" alt="RAGnosis Logo" width="200" />
 
   # RAGnosis
 
@@ -20,13 +20,23 @@ A production RAG system that answers questions about RAG technology itself—com
 1. **Data Collection** - GitHub Actions scrapes docs, fetches HuggingFace/GitHub metrics
 2. **Embedding Pipeline** - Python processes content and generates vector embeddings
 3. **User Query** - Next.js frontend sends questions to Deno edge function
-4. 5. **Query Planning** - LLM analyzes intent and determines search strategy
-6. 7. **Query Expanding** - Generates semantic variations (optional, disabled by default) 
+4. **Query Planning** - Analyze user intent and route to appropriate sources
+5. **LLM Planning** - Call LLM to generate intent classification and doc_type weights
+6. **Query Expanding** - Generate semantic variations (optional, disabled by default)
+7. **LLM Expansion** - Call LLM to create 2 alternative queries
 8. **Hybrid Search & RRF Merge** - Parallel vector and keyword searches combined via weighted fusion
 9. **Reranking** - Optional cross-encoder refinement (feature-flagged)
-10. 11. **Answer Generation** - LLM synthesizes response with citations
-12. 13. **Answer Evaluation** - Quality assessment across 4 dimensions (relevancy, accuracy, clarity, specificity) 
+10. **Answer Generation** - Synthesize response with proper citations
+11. **LLM Synthesis** - Call LLM to generate context-aware answer
+12. **Answer Evaluation** - Quality assessment across 4 dimensions
+13. **LLM Evaluation** - Call LLM to score answer quality (relevancy, accuracy, clarity, specificity)
 14. **Streaming Response** - Progressive results sent back to frontend
+
+### Event Flow & Data Volumes
+
+<div align="center">
+  <img src="docs/swimlane-diagram.png" alt="RAGnosis Event Flow" width="100%" />
+</div>
 
 ---
 
@@ -38,7 +48,7 @@ A production RAG system that answers questions about RAG technology itself—com
 | Vector search only | **Hybrid search** - Vector + keyword in parallel, RRF merge |
 | Return raw results | **Smart fusion** - RRF scoring, optional cross-encoder |
 | Generic answers | **Context-aware** - Market lists, how-tos, comparisons |
-| Enrich everything upfront | **Lazy enrichment** - Fetch 50 candidates → rerank → return top 20 |
+| Single query | **Query expansion** - 3 variations × hybrid search = 6 parallel searches |
 
 ## Agentic Components
 
