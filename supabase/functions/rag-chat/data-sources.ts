@@ -149,11 +149,12 @@ export async function executeDataSource(
         );
       }
 
-      // Query expansion if enabled (from database)
+      // Query expansion if enabled (from database) and not explicitly skipped
       const featureFlags = getFeatureFlagService(supabase);
       const expansionEnabled = await featureFlags.isEnabled("query_expansion");
+      const skipExpansion = (query.params as any)?.skip_expansion === true;
 
-      if (expansionEnabled) {
+      if (expansionEnabled && !skipExpansion) {
         if (progress) {
           progress.emit(
             "query_expander",
@@ -257,7 +258,7 @@ export async function executeDataSource(
             .map(([type, count]) => {
               const label =
                 type === "hf_model"
-                  ? "HF models"
+                  ? "Hugging Face models"
                   : type === "github_repo"
                     ? "GitHub repos"
                     : type === "knowledge_base"

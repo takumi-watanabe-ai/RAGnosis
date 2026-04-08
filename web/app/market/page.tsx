@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { Header } from "@/components/Header";
 import {
   getLanguageTopicMatrix,
   getTaskAnalysis,
@@ -130,32 +130,7 @@ export default function MarketAnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-cream">
-      {/* Header */}
-      <header className="border-b border-stone-border bg-cream sticky top-0 z-10">
-        <div className="px-6 sm:px-12 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="hover:opacity-70 transition-opacity">
-              <span className="text-xs sm:text-sm font-light tracking-[0.2em] text-charcoal uppercase">
-                RAGnosis
-              </span>
-            </Link>
-            <div className="flex items-center gap-4 sm:gap-6">
-              <Link
-                href="/market"
-                className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
-              >
-                Market
-              </Link>
-              <Link
-                href="/chat"
-                className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
-              >
-                Chat
-              </Link>
-            </div>
-          </div>
-        </div>
-      </header>
+      <Header />
 
       {/* Main Content */}
       <main className="px-2 sm:px-12 py-8 sm:py-12">

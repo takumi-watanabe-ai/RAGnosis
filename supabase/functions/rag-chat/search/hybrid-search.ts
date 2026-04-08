@@ -107,7 +107,7 @@ export class HybridSearch {
         if (topModels.length > 0) {
           augmentedVectorResults = [...augmentedVectorResults, ...topModels]
           if (verbose) {
-            console.log(`🔝 Augmented with ${topModels.length} top HF models (weight: ${weights.hf_model})`)
+            console.log(`🔝 Augmented with ${topModels.length} top Hugging Face models (weight: ${weights.hf_model})`)
           }
         }
       }

@@ -58,8 +58,8 @@ export function HorizontalBarChart<T = Record<string, unknown>>({
     y,
     payload,
   }: {
-    x: number;
-    y: number;
+    x: string | number;
+    y: string | number;
     payload: { value: string };
   }) => {
     const text = payload.value;
@@ -118,7 +118,7 @@ export function HorizontalBarChart<T = Record<string, unknown>>({
           type="category"
           dataKey={labelKey}
           stroke="#666666"
-          tick={<CustomYAxisTick />}
+          tick={CustomYAxisTick}
           width={isMobile ? 100 : labelWidth}
         />
         <Tooltip content={<CustomTooltip />} />

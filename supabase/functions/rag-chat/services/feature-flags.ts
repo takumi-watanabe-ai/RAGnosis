@@ -125,7 +125,7 @@ export class FeatureFlagService {
         enabled: true,
         config: {
           min_answer_length: 50,
-          min_score_for_iteration: 70,
+          min_score_for_iteration: 85,
           min_accuracy: 7,
           min_clarity: 7,
           min_faithfulness: 0.7,

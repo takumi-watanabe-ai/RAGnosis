@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { Header } from "@/components/Header";
 import {
   getTrendsTimeSeries,
   type TrendsTimeSeries,
@@ -88,32 +89,7 @@ export default function Home() {
   }, [loading]);
   return (
     <div className="min-h-screen bg-cream">
-      {/* Header */}
-      <header className="relative top-0 left-0 right-0 z-10 border-b border-stone-border bg-cream">
-        <div className="px-6 sm:px-12 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="hover:opacity-70 transition-opacity">
-              <span className="text-xs sm:text-sm font-light tracking-[0.2em] text-charcoal uppercase">
-                RAGnosis
-              </span>
-            </Link>
-            <div className="flex items-center gap-4 sm:gap-6">
-              <Link
-                href="/market"
-                className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
-              >
-                Market
-              </Link>
-              <Link
-                href="/chat"
-                className="text-xs sm:text-sm font-medium tracking-wide text-charcoal hover:opacity-70 transition-opacity uppercase"
-              >
-                Chat
-              </Link>
-            </div>
-          </div>
-        </div>
-      </header>
+      <Header />
 
       {/* Hero Section with Logo */}
       <main className="relative px-6 sm:px-12">
@@ -192,11 +168,7 @@ export default function Home() {
                 Search interest trends across RAG ecosystem keywords
               </p>
             </div>
-            <TrendsChart
-              trendsData={trendsData}
-              isTouchDevice={isTouchDevice}
-              maxTableRows={8}
-            />
+            <TrendsChart trendsData={trendsData} maxTableRows={8} />
           </div>
         )}
 

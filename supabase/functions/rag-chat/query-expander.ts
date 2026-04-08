@@ -20,11 +20,6 @@ export async function expandQuery(
   originalQuery: string,
   progress?: ProgressEmitter,
 ): Promise<string[]> {
-  // For simple ranking queries, don't expand
-  if (/^(top|best|most popular|list|show me)\s+\d*/i.test(originalQuery)) {
-    return [originalQuery];
-  }
-
   console.log(`🔄 Expanding query: "${originalQuery}"`);
 
   const prompt = `You are expanding search queries for a specialized knowledge base focused on RAG (Retrieval-Augmented Generation), vector databases, embeddings, LLMs, and AI/ML tooling.
@@ -83,7 +78,7 @@ Return ONLY the 2 alternative queries, one per line, nothing else. No numbering,
     if (progress) {
       const variationCount = allQueries.length - 1; // Exclude original
       const queriesList = allQueries
-        .map((q, i) => (i === 0 ? `→ "${q}" (original)` : `• "${q}"`))
+        .map((q, i) => (i === 0 ? `• "${q}" (original)` : `• "${q}"`))
         .join("\n");
       progress.emit(
         "query_expander",

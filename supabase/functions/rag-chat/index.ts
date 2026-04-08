@@ -95,7 +95,7 @@ serve(async (req) => {
                 .map(([type, count]) => {
                   const typeLabel =
                     type === "hf_model"
-                      ? "HuggingFace model" + (count > 1 ? "s" : "")
+                      ? "Hugging Face model" + (count > 1 ? "s" : "")
                       : type === "github_repo"
                         ? "GitHub repositor" + (count > 1 ? "ies" : "y")
                         : type === "knowledge_base"
@@ -327,6 +327,15 @@ serve(async (req) => {
                 fullAnswer += chunk;
               }
 
+              // Skip evaluation for comparison queries - they already have proper citations
+              // and benefit from having the right sources upfront, not iteration
+              if (plan.intent === "comparison") {
+                logger.info(
+                  `Skipping evaluation for comparison query - using answer as-is`,
+                );
+                break;
+              }
+
               // Evaluate answer quality
               const evaluation = await evaluateAnswer(
                 query,
@@ -349,7 +358,7 @@ serve(async (req) => {
               if (passesHardRequirements) {
                 logger.metrics(
                   `Answer quality: ${evaluation.score}/100 (${evaluation.confidence}) - ` +
-                    `Completeness: ${evaluation.completeness}/10, Accuracy: ${evaluation.accuracy}/10, ` +
+                    `Relevancy: ${evaluation.relevancy}/10, Accuracy: ${evaluation.accuracy}/10, ` +
                     `Clarity: ${evaluation.clarity}/10, Specificity: ${evaluation.specificity}/10 - APPROVED`,
                 );
                 break;
@@ -375,7 +384,7 @@ serve(async (req) => {
 
               logger.metrics(
                 `Answer quality: ${evaluation.score}/100 - NEEDS IMPROVEMENT - ` +
-                  `Completeness: ${evaluation.completeness}/10, Accuracy: ${evaluation.accuracy}/10, ` +
+                  `Relevancy: ${evaluation.relevancy}/10, Accuracy: ${evaluation.accuracy}/10, ` +
                   `Clarity: ${evaluation.clarity}/10, Specificity: ${evaluation.specificity}/10 - ` +
                   `Failed: ${failReasons.join(", ")}`,
               );
@@ -387,6 +396,14 @@ serve(async (req) => {
               // If this is the last iteration, use what we have
               if (iteration >= MAX_ITERATIONS) {
                 logger.warn(`Max iterations reached. Using current answer.`);
+                break;
+              }
+
+              // Don't iterate if no more sources available - regenerating with same sources is wasteful
+              if (availableDuplicates.length === 0) {
+                logger.warn(
+                  `No more alternative sources available - using current answer`,
+                );
                 break;
               }
 
@@ -527,14 +544,6 @@ serve(async (req) => {
                 progressEmitter.emit(
                   "answer_generator",
                   `Regenerating with enhanced source coverage...`,
-                );
-              } else {
-                logger.warn(
-                  `No more alternative sections available - regenerating with same sources`,
-                );
-                progressEmitter.emit(
-                  "answer_generator",
-                  `Refining answer with improved synthesis approach...`,
                 );
               }
             }
@@ -691,7 +700,7 @@ serve(async (req) => {
       if (evaluation) {
         logger.metrics(
           `Answer quality: ${evaluation.score}/100 (${evaluation.confidence}) - ` +
-            `Completeness: ${evaluation.completeness}/10, Accuracy: ${evaluation.accuracy}/10, ` +
+            `Relevancy: ${evaluation.relevancy}/10, Accuracy: ${evaluation.accuracy}/10, ` +
             `Clarity: ${evaluation.clarity}/10, Specificity: ${evaluation.specificity}/10`,
         );
         if (

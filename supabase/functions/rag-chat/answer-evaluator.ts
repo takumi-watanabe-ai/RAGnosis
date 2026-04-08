@@ -1,35 +1,103 @@
 /**
- * Answer Evaluator - Comprehensive heuristic-based quality checking
- * Adapted from production RAG system evaluation criteria
- * Zero-cost monitoring without LLM calls
+ * Answer Evaluator - LLM-based quality checking
+ * Uses LLM to evaluate answer quality across 4 dimensions
+ * Provides smarter, more nuanced evaluation than heuristics
  */
 
 import { LOG_PREFIX } from "./utils/constants.ts";
 import { getFeatureFlagService } from "./services/feature-flags.ts";
+import { getLLMClient } from "./services/llm-client.ts";
 
 export interface EvaluationResult {
   score: number; // 0-100
   confidence: "low" | "medium" | "high";
   issues: string[];
   shouldIterate: boolean;
-  completeness: number; // 0-10
+  relevancy: number; // 0-10
   accuracy: number; // 0-10
   clarity: number; // 0-10
   specificity: number; // 0-10
 }
 
 interface EvaluatorConfig {
-  min_answer_length: number;
   min_score_for_iteration: number;
-  min_accuracy: number;
-  min_clarity: number;
-  min_faithfulness: number;
-  max_iterations: number;
 }
 
 /**
- * Evaluate answer quality using fast heuristics
- * No LLM calls - instant evaluation for monitoring
+ * LLM response format for answer evaluation
+ */
+interface LLMEvaluationResponse {
+  relevancy: number; // 0-10
+  accuracy: number; // 0-10
+  clarity: number; // 0-10
+  specificity: number; // 0-10
+  issues: string[];
+}
+
+/**
+ * Build evaluation prompt for LLM
+ */
+function buildEvaluationPrompt(
+  question: string,
+  answer: string,
+  sourcesUsed: number,
+): string {
+  return `You are an expert RAG system evaluator. Evaluate the quality of the generated answer based on the user's question.
+
+**User Question:**
+${question}
+
+**Generated Answer:**
+${answer}
+
+**Sources Used:** ${sourcesUsed}
+
+Evaluate the answer on the following 4 dimensions using a 0-10 scale:
+
+1. **Relevancy (0-10)**: Does the answer directly address what was asked?
+   - 10: Perfectly addresses the question with all key points covered
+   - 7-9: Mostly relevant, minor gaps or tangents
+   - 4-6: Partially relevant, missing key aspects
+   - 0-3: Off-topic or doesn't address the question
+
+2. **Accuracy (0-10)**: Are claims properly cited and factual?
+   - 10: All claims cited with inline references, no vague statements
+   - 7-9: Most claims cited, minor gaps in citations
+   - 4-6: Some citations but many unsupported claims
+   - 0-3: No citations or unreliable information
+   - Special: Deduct heavily if sources_used = 0 (likely hallucinated)
+
+3. **Clarity (0-10)**: Is the answer well-structured and easy to understand?
+   - 10: Excellent structure with headers, bullets, clear organization
+   - 7-9: Good structure, easy to follow
+   - 4-6: Somewhat organized but could be clearer
+   - 0-3: Poorly structured, hard to understand
+   - Consider: Use of headers, bullet points, code blocks (when appropriate), logical flow
+
+4. **Specificity (0-10)**: Does it provide concrete details vs vague statements?
+   - 10: Specific examples, numbers, versions, tool names, actionable details
+   - 7-9: Mostly specific with some concrete examples
+   - 4-6: Mix of specific and generic content
+   - 0-3: Too generic, hedging phrases, no concrete details
+   - Look for: Version numbers, metrics, specific tool/model names, quantitative data
+
+**Output Format (JSON):**
+{
+  "relevancy": <number 0-10>,
+  "accuracy": <number 0-10>,
+  "clarity": <number 0-10>,
+  "specificity": <number 0-10>,
+  "issues": [<array of strings - each string is one actionable directive>]
+}
+
+**Each issue string must be a complete directive:**
+Include WHAT to fix, WHERE in the answer, WHICH source, and the specific data to add.
+Write as clear instructions that can be executed directly.
+Do not use nested objects - just plain strings.`;
+}
+
+/**
+ * Evaluate answer quality using LLM
  * Returns null if evaluator is disabled
  */
 export async function evaluateAnswer(
@@ -39,7 +107,7 @@ export async function evaluateAnswer(
   supabase: any,
 ): Promise<EvaluationResult | null> {
   try {
-    // Check if answer evaluator is enabled and get config (from database)
+    // Check if answer evaluator is enabled
     const featureFlags = getFeatureFlagService(supabase);
     const isEnabled = await featureFlags.isEnabled("answer_evaluator");
 
@@ -50,195 +118,35 @@ export async function evaluateAnswer(
     // Get evaluation thresholds from feature flag config
     const config =
       await featureFlags.getConfig<EvaluatorConfig>("answer_evaluator");
-    const issues: string[] = [];
 
-    // ========================================================================
-    // DIMENSION 1: COMPLETENESS (0-10)
-    // Does the answer fully address the question?
-    // ========================================================================
-    let completeness = 10;
+    // Build LLM evaluation prompt
+    const prompt = buildEvaluationPrompt(question, answer, sourcesUsed);
 
-    // Check answer length (minimum viable)
-    if (answer.length < config.min_answer_length) {
-      completeness -= 8;
-      issues.push(
-        `Answer critically short (< ${config.min_answer_length} chars) - lacks substance`,
-      );
-    } else if (answer.length < 150) {
-      completeness -= 4;
-      issues.push("Answer lacks depth - needs more detail");
-    } else if (answer.length < 300) {
-      completeness -= 2;
-      issues.push("Answer could be more comprehensive");
+    // Call LLM with automatic JSON parsing
+    const llmClient = getLLMClient();
+    const llmResponse = await llmClient.chatJson<LLMEvaluationResponse>(prompt);
+
+    if (!llmResponse) {
+      console.error(`${LOG_PREFIX.WARNING} LLM evaluation failed`);
+      return null;
     }
 
-    // Check for section coverage (for complex questions)
-    const questionWords = question.toLowerCase().split(/\s+/);
-    const hasMultiPart = questionWords.some((w) =>
-      ["and", "also", "compare", "versus", "vs"].includes(w),
-    );
-    if (hasMultiPart && answer.length < 400) {
-      completeness -= 2;
-      issues.push("Multi-part question needs more comprehensive coverage");
-    }
+    // Ensure scores are within valid range
+    const relevancy = Math.max(0, Math.min(10, llmResponse.relevancy));
+    const accuracy = Math.max(0, Math.min(10, llmResponse.accuracy));
+    const clarity = Math.max(0, Math.min(10, llmResponse.clarity));
+    const specificity = Math.max(0, Math.min(10, llmResponse.specificity));
 
-    // ========================================================================
-    // DIMENSION 2: ACCURACY (0-10)
-    // Are statements properly sourced and factual?
-    // ========================================================================
-    let accuracy = 10;
-
-    // Source usage check
-    if (sourcesUsed === 0) {
-      accuracy -= 9;
-      issues.push("No sources used - answer likely hallucinated");
-    } else if (sourcesUsed < 2) {
-      accuracy -= 3;
-      issues.push("Only one source - needs diverse evidence");
-    }
-
-    // Citation verification (inline citations)
-    // Match both formats: [1] [2] [3] and **[Name](url)**
-    const numericCitations = answer.match(/\[\d+\]/g) || [];
-    const namedCitations = answer.match(/\*\*\[.*?\]\(.*?\)\*\*/g) || [];
-    const citationCount = numericCitations.length + namedCitations.length;
-
-    if (citationCount === 0) {
-      accuracy -= 5;
-      issues.push("Missing inline citations - cannot verify claims");
-    } else if (citationCount < sourcesUsed / 2) {
-      accuracy -= 2;
-      issues.push(
-        "Insufficient citations - most sources not referenced in text",
-      );
-    }
-
-    // Vague reference detection (hallucination risk)
-    const vaguePatterns = [
-      /according to (the )?sources/i,
-      /based on (the )?information/i,
-      /sources (indicate|suggest|show)/i,
-      /the data (shows|suggests|indicates)/i,
-    ];
-    const hasVagueRefs = vaguePatterns.some((pattern) => pattern.test(answer));
-
-    if (hasVagueRefs && citationCount < 2) {
-      accuracy -= 3;
-      issues.push(
-        "Vague references instead of specific citations - accuracy concern",
-      );
-    }
-
-    // ========================================================================
-    // DIMENSION 3: CLARITY (0-10)
-    // Is the answer well-structured and easy to understand?
-    // ========================================================================
-    let clarity = 10;
-
-    // Structure assessment
-    const hasHeaders = /##\s+/.test(answer);
-    const hasBullets = /^[\s]*[-*]\s+/m.test(answer);
-    const hasNumberedList = /^\s*\d+\.\s+/m.test(answer);
-    const hasCodeBlocks = /```/g.test(answer);
-    const hasStructure = hasHeaders || hasBullets || hasNumberedList;
-
-    if (!hasStructure && answer.length > 200) {
-      clarity -= 3;
-      issues.push(
-        "Lacks structure - needs headers, bullets, or numbered lists",
-      );
-    }
-
-    if (answer.length > 400 && !hasHeaders) {
-      clarity -= 2;
-      issues.push("Long answer without section headers - hard to navigate");
-    }
-
-    // Check for code examples (for implementation questions)
-    const implementationKeywords = [
-      "how to",
-      "implement",
-      "use",
-      "example",
-      "code",
-      "setup",
-      "install",
-    ];
-    const needsCode = implementationKeywords.some((kw) =>
-      question.toLowerCase().includes(kw),
-    );
-    if (needsCode && !hasCodeBlocks) {
-      clarity -= 2;
-      issues.push("Implementation question needs code examples");
-    }
-
-    // ========================================================================
-    // DIMENSION 4: SPECIFICITY (0-10)
-    // Does it provide concrete details vs vague statements?
-    // ========================================================================
-    let specificity = 10;
-
-    // Generic phrase detection
-    const genericPhrases = [
-      "it depends",
-      "varies depending",
-      "more research needed",
-      "might be",
-      "could be",
-      "possibly",
-      "in some cases",
-      "generally",
-      "usually",
-    ];
-    const genericMatches = genericPhrases.filter((phrase) =>
-      answer.toLowerCase().includes(phrase),
-    );
-
-    if (genericMatches.length > 2) {
-      specificity -= 4;
-      issues.push("Too many hedging/generic phrases - lacks concrete details");
-    } else if (genericMatches.length > 0 && answer.length < 300) {
-      specificity -= 2;
-      issues.push("Generic response without specific examples or data");
-    }
-
-    // Check for specific indicators (numbers, versions, metrics)
-    const hasNumbers = /\d+/.test(answer);
-    const hasVersions = /v?\d+\.\d+/.test(answer);
-    const hasMetrics =
-      /(downloads|stars|parameters|accuracy|performance|speed)/i.test(answer);
-
-    if (!hasNumbers && answer.length > 200) {
-      specificity -= 3;
-      issues.push("Lacks specific numbers, metrics, or quantitative data");
-    }
-
-    // Check for model/tool names (ML/AI domain)
-    const hasTechnicalTerms =
-      /([A-Z][a-z]+){2,}|BERT|GPT|LLaMA|Llama|Transformers|PyTorch|TensorFlow/g.test(
-        answer,
-      );
-    if (!hasTechnicalTerms && answer.length > 150) {
-      specificity -= 2;
-      issues.push("Lacks specific tool/model names - too generic");
-    }
-
-    // ========================================================================
-    // FINAL SCORE CALCULATION
-    // Weighted composite score (0-100)
-    // ========================================================================
+    // Calculate weighted composite score (0-100)
     const rawScore =
-      completeness * 2.5 + // 25% weight
-      accuracy * 3.5 + // 35% weight (most important)
-      clarity * 2.0 + // 20% weight
-      specificity * 2.0; // 20% weight
+      relevancy * 3.5 + // 35% weight (most important)
+      accuracy * 3.0 + // 30% weight
+      clarity * 1.75 + // 17.5% weight
+      specificity * 1.75; // 17.5% weight
 
     const finalScore = Math.max(0, Math.min(100, Math.round(rawScore)));
 
-    // Confidence calibration (aligned with scoring)
-    // high (≥85): Excellent, comprehensive answer
-    // medium (60-84): Good but has room for improvement
-    // low (<60): Needs significant improvement
+    // Confidence calibration
     const confidence =
       finalScore >= 85 ? "high" : finalScore >= 60 ? "medium" : "low";
 
@@ -249,14 +157,14 @@ export async function evaluateAnswer(
       score: finalScore,
       confidence,
       issues:
-        issues.length > 0
-          ? issues
+        llmResponse.issues.length > 0
+          ? llmResponse.issues
           : ["Excellent - answer meets all quality standards"],
       shouldIterate,
-      completeness: Math.max(0, completeness),
-      accuracy: Math.max(0, accuracy),
-      clarity: Math.max(0, clarity),
-      specificity: Math.max(0, specificity),
+      relevancy,
+      accuracy,
+      clarity,
+      specificity,
     };
   } catch (error) {
     console.error(`${LOG_PREFIX.ERROR} Answer evaluation error:`, error);

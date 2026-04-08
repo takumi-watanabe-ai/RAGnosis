@@ -66,7 +66,7 @@ export function SourceCard({
               href={source.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-base font-light text-charcoal hover:opacity-60 transition-opacity block mb-1"
+              className="text-base font-light text-charcoal hover:opacity-60 transition-opacity block mb-1 underline"
             >
               {title}
             </a>

@@ -54,6 +54,7 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
     <>
       <Button
         variant="ghost"
+        size="sm"
         onClick={() => setOpen(true)}
         className="w-full justify-start gap-2 text-stone hover:text-charcoal hover:bg-cream text-xs uppercase tracking-wide font-normal"
       >

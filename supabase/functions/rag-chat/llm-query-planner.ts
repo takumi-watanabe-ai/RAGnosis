@@ -124,7 +124,7 @@ Intent types:
 
 Doc types:
 - "knowledge_base": Documentation, tutorials, explanations (Qdrant, Pinecone, ChromaDB docs)
-- "hf_model": HuggingFace models (embeddings, LLMs, etc.)
+- "hf_model": Hugging Face models (embeddings, LLMs, etc.)
 - "github_repo": GitHub repositories (frameworks, tools, libraries)
 
 Weight guidelines:
@@ -275,6 +275,8 @@ export async function createQueryPlan(
     params: {
       query: insight?.expanded_query || query,
       limit: top_k,
+      // Skip expansion for comparison queries to preserve exact items being compared
+      skip_expansion: intent === "comparison",
       ...(insight && {
         doc_type_weights: insight.doc_type_weights,
         nouns: insight.nouns,

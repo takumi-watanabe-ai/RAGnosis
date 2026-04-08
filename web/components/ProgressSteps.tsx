@@ -106,14 +106,14 @@ export function ProgressSteps({ steps, isStreaming }: ProgressStepsProps) {
                     <div className="flex-1 min-w-0">
                       {hasMultipleLines ? (
                         // Multi-line content (like query variations)
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           {item.message.split("\n").map((line, lineIndex) => {
                             // First line is the main message
                             if (lineIndex === 0) {
                               return (
                                 <div
                                   key={lineIndex}
-                                  className="text-stone-700 font-normal"
+                                  className="text-stone-700 font-light"
                                 >
                                   {line}
                                 </div>
@@ -123,7 +123,7 @@ export function ProgressSteps({ steps, isStreaming }: ProgressStepsProps) {
                             return (
                               <div
                                 key={lineIndex}
-                                className="pl-3 text-stone-600 font-mono text-[11px] leading-relaxed"
+                                className="pl-3 text-stone-500 font-mono text-[11px] leading-relaxed"
                               >
                                 {line}
                               </div>

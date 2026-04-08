@@ -78,12 +78,17 @@ async function collectStreamedAnswer(
   intent: QueryIntent,
   supabase?: SupabaseClient,
 ): Promise<string> {
-  let fullAnswer = '';
-  
-  for await (const chunk of generateAnswerStream(query, results, intent, supabase)) {
+  let fullAnswer = "";
+
+  for await (const chunk of generateAnswerStream(
+    query,
+    results,
+    intent,
+    supabase,
+  )) {
     fullAnswer += chunk;
   }
-  
+
   return fullAnswer;
 }
 
@@ -108,51 +113,22 @@ export async function* generateAnswerStreamWithFeedback(
     prompt = buildAnswerPrompt(query, results, intent);
   }
 
-  // Build focused improvement instructions based on weakest dimension
-  let criticalFix = '';
-  if (evaluation.accuracy < 7) {
-    criticalFix = `
-⚠️ CRITICAL: Previous answer had ZERO inline citations!
-You MUST add [1], [2], [3] citations after EVERY claim.
-Example: "RAG uses vector search [1]. LangChain provides embeddings [2]."
-DO NOT write ANY sentence without a citation number.`;
-  } else if (evaluation.clarity < 7) {
-    criticalFix = `
-⚠️ CRITICAL: Previous answer had NO structure!
-You MUST use headers and bullets:
-## Overview
-## Key Points
-- First point [1]
-- Second point [2]`;
-  } else if (evaluation.specificity < 7) {
-    criticalFix = `
-⚠️ CRITICAL: Previous answer was too vague!
-Include SPECIFIC numbers, versions, tool names from sources.
-Replace vague phrases with concrete facts.`;
-  } else if (evaluation.completeness < 7) {
-    criticalFix = `
-⚠️ CRITICAL: Previous answer was too brief!
-Expand to at least 400 words with comprehensive coverage.
-Add examples and detailed explanations.`;
-  }
-
   const improvementGuidance = `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️  PREVIOUS ANSWER WAS REJECTED - REGENERATE WITH FIXES
+⚠️  PREVIOUS ANSWER SCORED ${evaluation.score}/100 - REWRITE REQUIRED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${criticalFix}
 
-Issues found:
-${previousIssues.slice(0, 3).map((issue, i) => `${i + 1}. ${issue}`).join('\n')}
+FIX THESE ISSUES:
+${previousIssues.map((issue, i) => `${i + 1}. ${issue}`).join("\n")}
 
-Score: ${evaluation.score}/100 (Target: 85+)
-- Completeness: ${evaluation.completeness}/10
+Scores (Target: 8.5+ each):
+- Relevancy: ${evaluation.relevancy}/10
 - Accuracy: ${evaluation.accuracy}/10
 - Clarity: ${evaluation.clarity}/10
 - Specificity: ${evaluation.specificity}/10
 
-Generate a COMPLETE REWRITE that fixes ALL issues above. Follow the format requirements strictly.
+Generate a complete rewrite addressing every issue above.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
 
@@ -161,7 +137,10 @@ Generate a COMPLETE REWRITE that fixes ALL issues above. Follow the format requi
   try {
     yield* generateWithLLMStream(improvedPrompt);
   } catch (error) {
-    console.error(`${LOG_PREFIX.ERROR} Answer generation with feedback failed:`, error);
+    console.error(
+      `${LOG_PREFIX.ERROR} Answer generation with feedback failed:`,
+      error,
+    );
     yield RESPONSE_MESSAGES.GENERATION_ERROR;
   }
 }
@@ -169,7 +148,10 @@ Generate a COMPLETE REWRITE that fixes ALL issues above. Follow the format requi
 /**
  * Build prompt for market intelligence queries with strict grounding
  */
-function buildMarketIntelligencePrompt(query: string, results: SearchResult[]): string {
+function buildMarketIntelligencePrompt(
+  query: string,
+  results: SearchResult[],
+): string {
   const docType = results[0]?.doc_type;
   let context = "TOP RESULTS:\n\n";
 
@@ -181,17 +163,20 @@ function buildMarketIntelligencePrompt(query: string, results: SearchResult[]): 
     context += `   URL: ${item.url}\n`;
 
     if (docType === "hf_model") {
-      if (item.downloads) context += `   Downloads: ${item.downloads.toLocaleString()}\n`;
+      if (item.downloads)
+        context += `   Downloads: ${item.downloads.toLocaleString()}\n`;
       if (item.likes) context += `   Likes: ${item.likes.toLocaleString()}\n`;
       if (item.author) context += `   Author: ${item.author}\n`;
       if (item.task) context += `   Task: ${item.task}\n`;
-      if (item.description) context += `   Description: ${truncate(cleanPartSuffix(item.description), 200)}\n`;
+      if (item.description)
+        context += `   Description: ${truncate(cleanPartSuffix(item.description), 200)}\n`;
     } else if (docType === "github_repo") {
       if (item.stars) context += `   Stars: ${item.stars.toLocaleString()}\n`;
       if (item.forks) context += `   Forks: ${item.forks.toLocaleString()}\n`;
       if (item.owner) context += `   Owner: ${item.owner}\n`;
       if (item.language) context += `   Language: ${item.language}\n`;
-      if (item.description) context += `   Description: ${truncate(cleanPartSuffix(item.description), 200)}\n`;
+      if (item.description)
+        context += `   Description: ${truncate(cleanPartSuffix(item.description), 200)}\n`;
     }
     context += "\n";
   });
@@ -205,38 +190,41 @@ ANSWER REQUIREMENTS:
 1. For EACH item, provide:
    - Name as clickable link: **[Name](URL)**
    - CORRECT metrics based on type:
-     * HuggingFace models → Downloads (ALWAYS in data)
+     * Hugging Face models → Downloads (ALWAYS in data)
      * GitHub repos → Stars (ALWAYS in data)
    - What it's good for (from description/task)
    - When to use it (based on description)
+   - Add [1], [2], [3] citation after each item's details
 
 2. After the list, add "Choosing the Right One":
    - Quick decision guide based on use cases from descriptions above
    - Only use information explicitly in the data above
+   - Cite sources with [1], [2], etc.
 
 3. STRICT RULES:
+   - Add inline citations [number] after each claim
    - NEVER mention items not in the list above
    - NEVER invent features or capabilities
    - NEVER say "Not specified" for downloads/stars - they're ALWAYS present
    - NEVER mix model metrics with repo metrics
    - Base ALL context on the descriptions provided
 
-Answer format for HuggingFace models:
+Answer format for Hugging Face models:
 ## Top Models
 
-1. **[Name](URL)** - Downloads: [exact number from data]
-   - **What**: [From description]
-   - **Best for**: [From task/description]
+1. **[Name](URL)** - Downloads: [exact number from data] [1]
+   - **What**: [From description] [1]
+   - **Best for**: [From task/description] [1]
 
 Answer format for GitHub repos:
 ## Top Repos
 
-1. **[Name](URL)** - Stars: [exact number from data]
-   - **What**: [From description]
-   - **Best for**: [From description]
+1. **[Name](URL)** - Stars: [exact number from data] [1]
+   - **What**: [From description] [1]
+   - **Best for**: [From description] [1]
 
 ## Choosing the Right One
-- [Decision guide from data above only]
+- [Decision guide from data above with [1], [2] citations]
 
 Answer:`;
 }
@@ -253,7 +241,9 @@ async function generateWithLLM(prompt: string): Promise<string> {
     });
 
     if (result.usage) {
-      console.log(`${LOG_PREFIX.SUCCESS} Generation complete - Used ${result.usage.totalTokens} tokens`)
+      console.log(
+        `${LOG_PREFIX.SUCCESS} Generation complete - Used ${result.usage.totalTokens} tokens`,
+      );
     }
 
     return result.content;
@@ -266,21 +256,32 @@ async function generateWithLLM(prompt: string): Promise<string> {
 /**
  * Generate answer with LLM using streaming (includes retry logic)
  */
-async function* generateWithLLMStream(prompt: string): AsyncIterableIterator<string> {
+async function* generateWithLLMStream(
+  prompt: string,
+): AsyncIterableIterator<string> {
   try {
     const llmClient = getLLMClient();
 
     // Retry callback for logging
     const onRetry = (attempt: number, waitSeconds: number) => {
-      console.log(`${LOG_PREFIX.WARN} Retrying LLM request (${attempt}/3) after ${waitSeconds}s...`)
-    }
+      console.log(
+        `${LOG_PREFIX.WARN} Retrying LLM request (${attempt}/3) after ${waitSeconds}s...`,
+      );
+    };
 
-    yield* llmClient.generateStream(prompt, {
-      temperature: 0.3,
-      maxTokens: 1000,
-    }, onRetry);
+    yield* llmClient.generateStream(
+      prompt,
+      {
+        temperature: 0.3,
+        maxTokens: 1000,
+      },
+      onRetry,
+    );
   } catch (error) {
-    console.error(`${LOG_PREFIX.ERROR} LLM streaming generation failed:`, error);
+    console.error(
+      `${LOG_PREFIX.ERROR} LLM streaming generation failed:`,
+      error,
+    );
     yield RESPONSE_MESSAGES.GENERATION_ERROR;
   }
 }
@@ -309,7 +310,7 @@ function buildAnswerPrompt(
     context += `\n[${citationNum}] ${sourceLink}`;
 
     // Add type indicator
-    if (item.doc_type === "hf_model") context += ` (Type: HuggingFace Model)`;
+    if (item.doc_type === "hf_model") context += ` (Type: Hugging Face Model)`;
     else if (item.doc_type === "github_repo")
       context += ` (Type: GitHub Repository)`;
     else if (item.doc_type === "knowledge_base")
@@ -344,10 +345,7 @@ function buildAnswerPrompt(
           i < 2
             ? config.search.context.primaryExcerpt
             : config.search.context.secondaryExcerpt;
-        const excerpt = truncate(
-          cleanPartSuffix(item.content),
-          excerptLength
-        );
+        const excerpt = truncate(cleanPartSuffix(item.content), excerptLength);
         context += `   ${excerpt}\n`;
       }
     }
@@ -356,7 +354,7 @@ function buildAnswerPrompt(
     if (item.description && item.doc_type !== "knowledge_base") {
       const desc = truncate(
         cleanPartSuffix(item.description),
-        config.search.context.descriptionMax
+        config.search.context.descriptionMax,
       );
       context += `   ${desc}\n`;
     }
@@ -387,14 +385,15 @@ MANDATORY REQUIREMENTS (YOUR ANSWER WILL BE REJECTED IF YOU DON'T FOLLOW):
 
 1. STRUCTURE: Use this exact format:
    ## Overview
-   [2-3 sentences with [1] citations]
+   [1-2 sentences with [1] citations]
 
    ## Key Points
    - Point with specifics [1]
    - Point with metrics/numbers [2]
 
    ## Details
-   [Comprehensive explanation]
+   - Use bullet points (1-2 sentences each)
+   - Break up long explanations
 
 2. CITATIONS: EVERY FACT needs inline [1], [2], [3]
    - Put [number] immediately after EACH claim
@@ -420,7 +419,7 @@ MANDATORY REQUIREMENTS (YOUR ANSWER WILL BE REJECTED IF YOU DON'T FOLLOW):
 **HOW TO ANSWER:**
 1. Start with a direct answer to the specific question asked
 2. Provide supporting details from sources
-3. Match source types (models → HuggingFace, repos → GitHub)
+3. Match source types (models → Hugging Face, repos → GitHub)
 4. Include ALL metrics (downloads/likes/stars/forks) from sources only
 5. Use bullet points for multiple items`;
 
@@ -447,42 +446,35 @@ MANDATORY REQUIREMENTS (YOUR ANSWER WILL BE REJECTED IF YOU DON'T FOLLOW):
     case "comparison":
       return `${baseRules}
 
-**HOW TO ANSWER - Follow this EXACT structure:**
+**HOW TO ANSWER - Use a comparison table:**
 
-1. **Opening:** Start with ONE clear sentence stating the core difference
-2. **Key Differences:** Group by FEATURE (not by product), then compare both items using their ACTUAL NAMES
-3. **When to Choose:** Provide use case guidance from sources
+1. **Opening:** ONE sentence with the core difference
+2. **Comparison Table:** Side-by-side comparison of 3-5 key aspects
+3. **Bottom Line:** When to choose each option (from sources)
 
-**CRITICAL - USE ACTUAL NAMES:**
-- DO NOT use generic placeholders like "Item A" or "Item B"
-- ALWAYS use the actual product/tool/concept names from the user's question
-- Example: If comparing "LangChain vs LlamaIndex", use those exact names
+**REQUIRED FORMAT:**
 
-**Example Structure:**
-Opening sentence about core difference
+Opening sentence stating the main difference [1]
 
-## Key Differences
+| Aspect | **[LangChain](https://...)** | **LlamaIndex](https://...)** |
+|--------|------------------------------|------------------------------|
+| Core Purpose | What it does [1] | What it does [2] |
+| Architecture | How it works [1] | How it works [2] |
+| Performance | Speed/efficiency [1] | Speed/efficiency [2] |
+| Best For | Use cases [1] | Use cases [2] |
 
-**Core Architecture:**
-- **FirstTool**: [How it works from sources]
-- **SecondTool**: [How it works from sources]
+**When to Choose:**
+- **LangChain**: If you need X [1]
+- **LlamaIndex**: If you need Y [2]
 
-**Performance:**
-- **FirstTool**: [Speed/efficiency from sources]
-- **SecondTool**: [Speed/efficiency from sources]
-
-## When to Choose
-- **FirstTool**: [Use cases from sources]
-- **SecondTool**: [Use cases from sources]
-
-NOTE: Replace "FirstTool" and "SecondTool" with the ACTUAL names from the user's question.
-Replace feature categories with SPECIFIC aspects (not generic like "Feature 1").
-
-**FORMATTING RULES:**
-- Use bullet points (-) ONLY, NO numbered lists
-- Keep concise - compare 3-5 key features maximum
-- Compare the SAME aspects for both items
-- NEVER use "Item A" or "Item B" - always use the actual names`;
+**CRITICAL RULES:**
+- Use ACTUAL names from the question (e.g., "LangChain" vs "LlamaIndex")
+- Link each name in headers using the source URL: **[Name](actual-url-from-source)**
+- Replace "actual-url-from-source" with the real URL from the SOURCES list above
+- Compare 3-5 aspects maximum (choose most relevant from sources)
+- Keep cells concise (1-2 sentences max)
+- Every cell needs a citation [1] [2] [3]
+- Pick aspects that actually differ between items`;
 
     case "conceptual":
     default:
@@ -498,11 +490,31 @@ Replace feature categories with SPECIFIC aspects (not generic like "Feature 1").
 3. **Synthesize across sources** - if multiple sources describe the same concept with different tools, unify into one general explanation
 4. **Focus on HOW and WHY** things work in general, not on specific implementations
 
+**STRUCTURE REQUIREMENTS:**
+1. **Keep paragraphs SHORT** - Maximum 2-3 sentences per paragraph
+2. **Tables are optional** - consider using a table when comparing 2-3 components/systems side-by-side:
+
+   | Component | Purpose |
+   |-----------|---------|
+   | [Name] | [What it does] |
+
+   Only use if it genuinely improves clarity. Don't force it.
+
+3. **Order sections strategically:**
+   - Overview (WHAT) → 1-2 sentences only
+   - Benefits/Use Cases (WHY) → should come BEFORE deep technical details
+   - How It Works (HOW) → technical mechanics
+   - Details/Advanced → optional depth
+
+4. **Avoid repetition** - explain each concept ONCE clearly, don't repeat definitions
+
 **HOW TO ANSWER:**
 1. Start with a 1-2 sentence direct definition of the concept
-2. Explain HOW it works using general terms (e.g., "systems", "models", "databases" instead of brand names)
-3. Explain WHY it's used (benefits/use cases from sources)
-4. Use bullet points to organize key points
-5. Keep concrete examples general and illustrative, not tool-specific`;
+2. Explain WHY it's used (benefits/use cases) EARLY - right after overview
+3. If describing architecture with multiple components, use a comparison table
+4. Break long explanations into SHORT paragraphs (2-3 sentences maximum)
+5. Explain HOW it works using general terms (e.g., "systems", "models", "databases")
+6. Use bullet points for lists, but keep each point concise
+7. Don't repeat concepts - if you explained "embeddings convert text to vectors" once, don't explain it again`;
   }
 }

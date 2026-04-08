@@ -18,7 +18,6 @@ import {
 import { SourceCard } from "./SourceCard";
 import { ProgressSteps } from "./ProgressSteps";
 import type { SearchResult } from "@/lib/api";
-import { quickQuestions } from "@/lib/quick-questions";
 import type { SettingsConfig } from "./Settings";
 import { preprocessCitationMarkers } from "@/lib/citation-utils";
 
@@ -378,13 +377,13 @@ export const SimpleChatInterface = forwardRef<
     }
   };
 
-  // Curated questions for initial screen - diverse and welcoming
+  // Most frequently asked questions - optimized for 90% of users
   const suggestedQuestions = [
-    quickQuestions.find((q) => q.id === "how-1")?.text || "", // How does RAG work?
-    quickQuestions.find((q) => q.id === "cmp-1")?.text || "", // When should I use RAG vs fine-tuning?
-    quickQuestions.find((q) => q.id === "how-2")?.text || "", // How do I improve retrieval accuracy?
-    quickQuestions.find((q) => q.id === "trend-1")?.text || "", // What's trending in RAG right now?
-  ].filter(Boolean);
+    "What is RAG?",
+    "best embedding model",
+    "What are the most popular vector databases?",
+    "When should I use RAG?",
+  ];
 
   return (
     <div className="flex flex-col h-full bg-cream">
@@ -404,7 +403,8 @@ export const SimpleChatInterface = forwardRef<
               {ecosystemStats && (
                 <div className="flex flex-wrap gap-6 mb-16 text-xs text-stone uppercase tracking-wider font-normal">
                   <div className="border-b border-stone-border pb-1">
-                    {ecosystemStats.total_models.toLocaleString()} Hugging Face Models
+                    {ecosystemStats.total_models.toLocaleString()} Hugging Face
+                    Models
                   </div>
                   <div className="border-b border-stone-border pb-1">
                     {ecosystemStats.total_repos.toLocaleString()} GitHub Repos
@@ -573,6 +573,38 @@ export const SimpleChatInterface = forwardRef<
                                 </a>
                               );
                             },
+                            table: ({ children }) => (
+                              <div className="mb-6 overflow-x-auto">
+                                <table className="w-full border-collapse">
+                                  {children}
+                                </table>
+                              </div>
+                            ),
+                            thead: ({ children }) => (
+                              <thead className="border-b-2 border-charcoal">
+                                {children}
+                              </thead>
+                            ),
+                            tbody: ({ children }) => (
+                              <tbody className="divide-y divide-stone-border">
+                                {children}
+                              </tbody>
+                            ),
+                            tr: ({ children }) => (
+                              <tr className="hover:bg-cream/50 transition-colors">
+                                {children}
+                              </tr>
+                            ),
+                            th: ({ children }) => (
+                              <th className="px-4 py-3 text-left text-sm font-medium text-charcoal uppercase tracking-wider">
+                                {children}
+                              </th>
+                            ),
+                            td: ({ children }) => (
+                              <td className="px-4 py-3 text-base text-charcoal align-top">
+                                {children}
+                              </td>
+                            ),
                           }}
                         >
                           {preprocessCitationMarkers(
@@ -694,8 +726,8 @@ export const SimpleChatInterface = forwardRef<
       )}
 
       {/* Input Area */}
-      <div className="border-t border-stone-border p-6 bg-white">
-        <div className="max-w-3xl mx-auto">
+      <div className="border-t border-stone-border px-6 h-[76px] flex items-center bg-white">
+        <div className="max-w-3xl mx-auto w-full">
           <div className="flex gap-4 items-end">
             <textarea
               ref={inputRef}
@@ -703,22 +735,14 @@ export const SimpleChatInterface = forwardRef<
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyPress}
               placeholder="Ask a question..."
-              className="flex-1 resize-none border-0 border-b border-stone-border px-0 py-3 text-base sm:text-lg text-charcoal placeholder-stone focus:outline-none focus:border-charcoal min-h-[44px] max-h-[150px] bg-transparent font-light"
+              className="flex-1 resize-none border-0 border-b border-stone-border px-0 py-2 text-base sm:text-lg text-charcoal placeholder-stone focus:outline-none focus:border-charcoal min-h-[32px] max-h-[150px] bg-transparent font-light"
               rows={1}
             />
             <div className="flex gap-3 items-center">
-              {messages.length > 0 && (
-                <button
-                  onClick={clearChat}
-                  className="text-xs text-stone hover:text-charcoal transition-colors uppercase tracking-wider pb-3 font-normal"
-                >
-                  Clear
-                </button>
-              )}
               <button
                 onClick={() => handleSendMessage()}
                 disabled={isLoading || !input.trim()}
-                className="text-xs text-charcoal hover:opacity-60 disabled:opacity-30 transition-opacity uppercase tracking-wider pb-3 font-normal"
+                className="text-xs text-charcoal hover:opacity-60 disabled:opacity-30 transition-opacity uppercase tracking-wider pb-2 font-normal"
               >
                 Send
               </button>
