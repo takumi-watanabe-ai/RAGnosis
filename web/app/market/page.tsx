@@ -8,14 +8,12 @@ import {
   getTopicAnalysis,
   getModelCompetitivePosition,
   getRepoCompetitivePosition,
-  getTechStackPatterns,
   getRagTechStackSankey,
   type LanguageTopicMatrix,
   type TaskAnalysis,
   type TopicAnalysis,
   type ModelCompetitivePosition,
   type RepoCompetitivePosition,
-  type TechStackPattern,
   type RagTechStackSankeyFlow,
 } from "@/lib/market-analysis";
 import {
@@ -33,7 +31,6 @@ import { TrendsChart } from "./components/TrendsChart";
 import { OpportunityAnalysis } from "./components/OpportunityAnalysis";
 import { CompetitivePositionAnalysis } from "./components/CompetitivePositionAnalysis";
 import { LanguageTopicHeatmap } from "./components/LanguageTopicHeatmap";
-import { TechStackPatternsChart } from "./components/TechStackPatternsChart";
 import { RagTechStackSankey } from "./components/RagTechStackSankey";
 import { TopModelsRepos } from "./components/TopModelsRepos";
 import { EcosystemStats } from "@/app/components/EcosystemStats";
@@ -49,7 +46,6 @@ export default function MarketAnalyticsPage() {
   const [repoPositions, setRepoPositions] = useState<RepoCompetitivePosition[]>(
     [],
   );
-  const [stackPatterns, setStackPatterns] = useState<TechStackPattern[]>([]);
   const [sankeyFlows, setSankeyFlows] = useState<RagTechStackSankeyFlow[]>([]);
   const [trendsData, setTrendsData] = useState<TrendsTimeSeries[]>([]);
   const [topModels, setTopModels] = useState<ModelData[]>([]);
@@ -70,7 +66,6 @@ export default function MarketAnalyticsPage() {
           topicData,
           modelPosData,
           repoPosData,
-          stackData,
           sankeyData,
           trendsData,
           modelsData,
@@ -81,7 +76,6 @@ export default function MarketAnalyticsPage() {
           getTopicAnalysis(),
           getModelCompetitivePosition(),
           getRepoCompetitivePosition(),
-          getTechStackPatterns(),
           getRagTechStackSankey(),
           getTrendsTimeSeries(),
           getTopModels(10),
@@ -93,7 +87,6 @@ export default function MarketAnalyticsPage() {
         setTopics(topicData);
         setModelPositions(modelPosData);
         setRepoPositions(repoPosData);
-        setStackPatterns(stackData);
         setSankeyFlows(sankeyData);
         setTrendsData(trendsData);
         setTopModels(modelsData);
@@ -204,14 +197,6 @@ export default function MarketAnalyticsPage() {
             subtitle="Which languages dominate which topics?"
           >
             <LanguageTopicHeatmap langMatrix={langMatrix} />
-          </Section>
-
-          {/* Technology Stack Patterns */}
-          <Section
-            title="Technology Stack Patterns"
-            subtitle="Which technologies are commonly used together? (Top topic pairs)"
-          >
-            <TechStackPatternsChart stackPatterns={stackPatterns} />
           </Section>
         </div>
       </main>

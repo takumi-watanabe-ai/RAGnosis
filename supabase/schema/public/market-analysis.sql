@@ -57,20 +57,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Get tech stack co-occurrence patterns
-CREATE OR REPLACE FUNCTION public.get_tech_stack_patterns()
-RETURNS JSON AS $$
-DECLARE
-  result JSON;
-BEGIN
-  SELECT json_agg(row_to_json(t))
-  INTO result
-  FROM private.get_tech_stack_patterns_internal() t;
-
-  RETURN COALESCE(result, '[]'::json);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Get topic analysis (repos)
 CREATE OR REPLACE FUNCTION public.get_topic_analysis()
 RETURNS JSON AS $$

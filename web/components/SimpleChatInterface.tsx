@@ -68,7 +68,6 @@ export const SimpleChatInterface = forwardRef<
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const initialQuestionSentRef = useRef(false);
-  const [loadingDots, setLoadingDots] = useState("");
   const [ecosystemStats, setEcosystemStats] = useState<EcosystemStats | null>(
     null,
   );
@@ -166,23 +165,6 @@ export const SimpleChatInterface = forwardRef<
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuestion]);
-
-  useEffect(() => {
-    if (!isLoading) {
-      setLoadingDots("");
-      return;
-    }
-
-    const dots = ["", ".", "..", "..."];
-    let index = 0;
-
-    const interval = setInterval(() => {
-      setLoadingDots(dots[index]);
-      index = (index + 1) % dots.length;
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [isLoading]);
 
   const handleSendMessage = async (messageText?: string) => {
     const text = messageText || input.trim();
@@ -428,164 +410,156 @@ export const SimpleChatInterface = forwardRef<
                   className={`${message.role === "user" ? "text-right" : ""}`}
                 >
                   {message.role === "assistant" ? (
-                    message.content.length === 0 && isLoading ? (
-                      <div className="text-base text-stone italic font-light">
-                        Ragging{loadingDots}
-                      </div>
-                    ) : (
-                      <div className="text-charcoal leading-relaxed prose prose-lg max-w-none font-light">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            p: ({ children }) => (
-                              <p className="mb-6 text-base sm:text-lg text-charcoal leading-relaxed">
+                    <div className="text-charcoal leading-relaxed prose prose-lg max-w-none font-light">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          p: ({ children }) => (
+                            <p className="mb-6 text-base sm:text-lg text-charcoal leading-relaxed">
+                              {children}
+                            </p>
+                          ),
+                          ul: ({ children }) => (
+                            <ul className="mb-6 space-y-2 list-none pl-0 [&>li]:pl-6 [&>li]:relative [&>li]:before:content-['–'] [&>li]:before:absolute [&>li]:before:left-0 [&>li]:before:text-stone [&>li]:before:font-light">
+                              {children}
+                            </ul>
+                          ),
+                          ol: ({ children }) => (
+                            <ol className="mb-6 space-y-2 list-decimal pl-6 [&>li]:pl-2">
+                              {children}
+                            </ol>
+                          ),
+                          li: ({ children }) => (
+                            <li className="text-base sm:text-lg text-charcoal leading-relaxed mb-2">
+                              {children}
+                            </li>
+                          ),
+                          strong: ({ children }) => (
+                            <strong className="text-charcoal font-normal">
+                              {children}
+                            </strong>
+                          ),
+                          h1: ({ children }) => (
+                            <h1 className="text-2xl sm:text-3xl font-light text-charcoal mb-6 mt-8 border-b border-stone-border pb-3">
+                              {children}
+                            </h1>
+                          ),
+                          h2: ({ children }) => (
+                            <h2 className="text-xl sm:text-2xl font-normal text-charcoal mb-5 mt-8 border-b border-stone-border/50 pb-2">
+                              {children}
+                            </h2>
+                          ),
+                          h3: ({ children }) => (
+                            <h3 className="text-lg sm:text-xl font-normal text-charcoal mb-4 mt-6">
+                              {children}
+                            </h3>
+                          ),
+                          h4: ({ children }) => (
+                            <h4 className="text-base sm:text-lg font-medium text-charcoal mb-3 mt-5 tracking-wide">
+                              {children}
+                            </h4>
+                          ),
+                          h5: ({ children }) => (
+                            <h5 className="text-base font-medium text-charcoal mb-2 mt-4 tracking-wide uppercase text-stone">
+                              {children}
+                            </h5>
+                          ),
+                          h6: ({ children }) => (
+                            <h6 className="text-sm font-medium text-stone mb-2 mt-3 tracking-wider uppercase">
+                              {children}
+                            </h6>
+                          ),
+                          code: ({ children, className }) => {
+                            const isInline = !className;
+                            return isInline ? (
+                              <code className="text-charcoal bg-cream px-2 py-0.5 text-sm font-mono">
                                 {children}
-                              </p>
-                            ),
-                            ul: ({ children }) => (
-                              <ul className="mb-6 space-y-2 list-none pl-0 [&>li]:pl-6 [&>li]:relative [&>li]:before:content-['–'] [&>li]:before:absolute [&>li]:before:left-0 [&>li]:before:text-stone [&>li]:before:font-light">
-                                {children}
-                              </ul>
-                            ),
-                            ol: ({ children }) => (
-                              <ol className="mb-6 space-y-2 list-decimal pl-6 [&>li]:pl-2">
-                                {children}
-                              </ol>
-                            ),
-                            li: ({ children }) => (
-                              <li className="text-base sm:text-lg text-charcoal leading-relaxed mb-2">
-                                {children}
-                              </li>
-                            ),
-                            strong: ({ children }) => (
-                              <strong className="text-charcoal font-normal">
-                                {children}
-                              </strong>
-                            ),
-                            h1: ({ children }) => (
-                              <h1 className="text-2xl sm:text-3xl font-light text-charcoal mb-6 mt-8 border-b border-stone-border pb-3">
-                                {children}
-                              </h1>
-                            ),
-                            h2: ({ children }) => (
-                              <h2 className="text-xl sm:text-2xl font-normal text-charcoal mb-5 mt-8 border-b border-stone-border/50 pb-2">
-                                {children}
-                              </h2>
-                            ),
-                            h3: ({ children }) => (
-                              <h3 className="text-lg sm:text-xl font-normal text-charcoal mb-4 mt-6">
-                                {children}
-                              </h3>
-                            ),
-                            h4: ({ children }) => (
-                              <h4 className="text-base sm:text-lg font-medium text-charcoal mb-3 mt-5 tracking-wide">
-                                {children}
-                              </h4>
-                            ),
-                            h5: ({ children }) => (
-                              <h5 className="text-base font-medium text-charcoal mb-2 mt-4 tracking-wide uppercase text-stone">
-                                {children}
-                              </h5>
-                            ),
-                            h6: ({ children }) => (
-                              <h6 className="text-sm font-medium text-stone mb-2 mt-3 tracking-wider uppercase">
-                                {children}
-                              </h6>
-                            ),
-                            code: ({ children, className }) => {
-                              const isInline = !className;
-                              return isInline ? (
-                                <code className="text-charcoal bg-cream px-2 py-0.5 text-sm font-mono">
-                                  {children}
-                                </code>
-                              ) : (
-                                <code className={className}>{children}</code>
-                              );
-                            },
-                            pre: ({ children }) => (
-                              <pre className="bg-cream p-6 overflow-x-auto mb-6 text-sm">
-                                {children}
-                              </pre>
-                            ),
-                            a: ({ children, href }) => {
-                              // Handle citation links
-                              if (href?.startsWith("#cite-")) {
-                                const marker = href.replace("#cite-", "");
-                                const allMarkers =
-                                  message.sources
-                                    ?.map((s) =>
-                                      s.marker?.replace(/[\[\]]/g, ""),
-                                    )
-                                    .filter(Boolean) || [];
-                                return (
-                                  <button
-                                    onClick={() =>
-                                      handleCitationClick(
-                                        message.id,
-                                        marker,
-                                        allMarkers as string[],
-                                      )
-                                    }
-                                    className="inline-flex items-center justify-center w-5 h-5 mx-0.5 text-[10px] font-semibold rounded-full bg-stone-200 text-charcoal hover:bg-blue-500 hover:text-white cursor-pointer transition-colors align-super -translate-y-0.5"
-                                    title={`Jump to source [${marker}]`}
-                                  >
-                                    {children}
-                                  </button>
-                                );
-                              }
-                              // Regular links
+                              </code>
+                            ) : (
+                              <code className={className}>{children}</code>
+                            );
+                          },
+                          pre: ({ children }) => (
+                            <pre className="bg-cream p-6 overflow-x-auto mb-6 text-sm">
+                              {children}
+                            </pre>
+                          ),
+                          a: ({ children, href }) => {
+                            // Handle citation links
+                            if (href?.startsWith("#cite-")) {
+                              const marker = href.replace("#cite-", "");
+                              const allMarkers =
+                                message.sources
+                                  ?.map((s) => s.marker?.replace(/[\[\]]/g, ""))
+                                  .filter(Boolean) || [];
                               return (
-                                <a
-                                  href={href}
-                                  className="text-charcoal hover:opacity-60 underline decoration-1 underline-offset-4 transition-opacity"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                <button
+                                  onClick={() =>
+                                    handleCitationClick(
+                                      message.id,
+                                      marker,
+                                      allMarkers as string[],
+                                    )
+                                  }
+                                  className="inline-flex items-center justify-center w-5 h-5 mx-0.5 text-[10px] font-semibold rounded-full bg-stone-200 text-charcoal hover:bg-blue-500 hover:text-white cursor-pointer transition-colors align-super -translate-y-0.5"
+                                  title={`Jump to source [${marker}]`}
                                 >
                                   {children}
-                                </a>
+                                </button>
                               );
-                            },
-                            table: ({ children }) => (
-                              <div className="mb-6 overflow-x-auto">
-                                <table className="w-full border-collapse">
-                                  {children}
-                                </table>
-                              </div>
-                            ),
-                            thead: ({ children }) => (
-                              <thead className="border-b border-stone-border">
+                            }
+                            // Regular links
+                            return (
+                              <a
+                                href={href}
+                                className="text-charcoal hover:opacity-60 underline decoration-1 underline-offset-4 transition-opacity"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
                                 {children}
-                              </thead>
-                            ),
-                            tbody: ({ children }) => (
-                              <tbody className="divide-y divide-stone-border">
+                              </a>
+                            );
+                          },
+                          table: ({ children }) => (
+                            <div className="mb-6 overflow-x-auto">
+                              <table className="w-full border-collapse">
                                 {children}
-                              </tbody>
-                            ),
-                            tr: ({ children }) => (
-                              <tr className="hover:bg-cream/50 transition-colors">
-                                {children}
-                              </tr>
-                            ),
-                            th: ({ children }) => (
-                              <th className="px-4 py-3 text-left text-sm font-medium text-charcoal uppercase tracking-wider">
-                                {children}
-                              </th>
-                            ),
-                            td: ({ children }) => (
-                              <td className="px-4 py-3 text-base text-charcoal align-top">
-                                {children}
-                              </td>
-                            ),
-                          }}
-                        >
-                          {preprocessCitationMarkers(
-                            message.content,
-                            message.sources || [],
-                          )}
-                        </ReactMarkdown>
-                      </div>
-                    )
+                              </table>
+                            </div>
+                          ),
+                          thead: ({ children }) => (
+                            <thead className="border-b border-stone-border">
+                              {children}
+                            </thead>
+                          ),
+                          tbody: ({ children }) => (
+                            <tbody className="divide-y divide-stone-border">
+                              {children}
+                            </tbody>
+                          ),
+                          tr: ({ children }) => (
+                            <tr className="hover:bg-cream/50 transition-colors">
+                              {children}
+                            </tr>
+                          ),
+                          th: ({ children }) => (
+                            <th className="px-4 py-3 text-left text-sm font-medium text-charcoal uppercase tracking-wider">
+                              {children}
+                            </th>
+                          ),
+                          td: ({ children }) => (
+                            <td className="px-4 py-3 text-base text-charcoal align-top">
+                              {children}
+                            </td>
+                          ),
+                        }}
+                      >
+                        {preprocessCitationMarkers(
+                          message.content,
+                          message.sources || [],
+                        )}
+                      </ReactMarkdown>
+                    </div>
                   ) : (
                     <div className="text-lg text-charcoal italic font-light">
                       {message.content}

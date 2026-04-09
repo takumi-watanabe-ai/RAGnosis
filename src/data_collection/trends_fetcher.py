@@ -42,8 +42,11 @@ class GoogleTrendsFetcher:
     RAG_KEYWORDS = {
         # Core RAG concepts (track awareness)
         "concepts": [
+            "Generative AI",  # Broad baseline for context
+            "AI Chatbot",  # Application-level trend
+            "Prompt Engineering",  # Alternative/complementary technique
             "RAG",  # Ambiguous but HIGH signal
-            "retrieval augmented generation",
+            "Retrieval-augmented generation",
             "vector database",
             "vector search",
             "semantic search",
@@ -51,6 +54,10 @@ class GoogleTrendsFetcher:
             "hybrid search",
             "reranking",
             "sentence transformers",
+            "similarity search",
+            "text embeddings",
+            "document retrieval",
+            "knowledge base",
         ],
         # RAG frameworks (specific tools)
         "frameworks": [
@@ -68,6 +75,10 @@ class GoogleTrendsFetcher:
             "Chroma",  # Yes, includes color but we want the signal
             "Faiss",
             "pgvector",
+        ],
+        # Embedding & reranking services
+        "services": [
+            "Cohere",
         ],
         # Agent terms (track agent trend)
         "agent_terms": ["AI agent", "agentic AI", "autonomous agent"],

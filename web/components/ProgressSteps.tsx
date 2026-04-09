@@ -27,7 +27,7 @@ export function ProgressSteps({ steps, isStreaming }: ProgressStepsProps) {
     query_expander: "Query Expander",
     search_engine: "Search Engine",
     answer_generator: "Answer Generator",
-    quality_checker: "Quality Checker",
+    quality_checker: "Answer Evaluator",
     start: "System",
   };
 

@@ -63,15 +63,6 @@ export interface RepoCompetitivePosition {
   market_share: number;
 }
 
-export interface TechStackPattern {
-  topic1: string;
-  topic2: string;
-  co_occurrence_count: number;
-  topic1_total: number;
-  topic2_total: number;
-  correlation_strength: number;
-}
-
 export interface CommonTechStack {
   stack_topics: string[];
   repo_count: number;
@@ -121,12 +112,6 @@ export async function getRepoCompetitivePosition(): Promise<
   return data || [];
 }
 
-export async function getTechStackPatterns(): Promise<TechStackPattern[]> {
-  const { data, error } = await supabase.rpc("get_tech_stack_patterns");
-  if (error) throw error;
-  return data || [];
-}
-
 export async function getCommonTechStacks(): Promise<CommonTechStack[]> {
   const { data, error } = await supabase.rpc("get_common_tech_stacks");
   if (error) throw error;
@@ -140,3 +125,7 @@ export async function getRagTechStackSankey(): Promise<
   if (error) throw error;
   return data || [];
 }
+
+
+
+
