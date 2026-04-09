@@ -4,39 +4,31 @@
   # RAGnosis
 
   > **Agentic AI system for RAG technology intelligence**
+
+  **[🚀 Now Live](https://www.ragnosis.app)**
 </div>
 
-A production RAG system that answers questions about RAG technology itself—combining quantitative metrics from HuggingFace and GitHub with expert knowledge from official documentation. Built to showcase sophisticated RAG patterns that go beyond basic vector search.
+A production RAG system that answers questions about RAG technology itself, combining quantitative metrics from HuggingFace and GitHub with expert knowledge from official documentation. Built to showcase sophisticated RAG patterns that go beyond basic vector search.
 
-**What makes this interesting:** Most RAG tutorials do naive vector search and call it done. This system demonstrates agentic planning, hybrid search, RRF fusion, and cost optimization—techniques you need for production systems.
+**What makes this interesting:** Most RAG tutorials do naive vector search and call it done. This system demonstrates agentic planning, hybrid search, RRF fusion, and cost optimization techniques you need for production systems.
 
 ## Architecture Overview
 
 <div align="center">
-  <img src="docs/architecture-diagram.svg" alt="RAGnosis Architecture" width="100%" />
+  <img src="docs/architecture-diagram.png" alt="RAGnosis Architecture" width="100%" />
 </div>
 
-**Flow:**
-1. **Data Collection** - GitHub Actions scrapes docs, fetches HuggingFace/GitHub metrics
-2. **Embedding Pipeline** - Python processes content and generates vector embeddings
-3. **User Query** - Next.js frontend sends questions to Deno edge function
-4. **Query Planning** - Analyze user intent and route to appropriate sources
-5. **LLM Planning** - Call LLM to generate intent classification and doc_type weights
-6. **Query Expanding** - Generate semantic variations (optional, disabled by default)
-7. **LLM Expansion** - Call LLM to create 2 alternative queries
-8. **Hybrid Search & RRF Merge** - Parallel vector and keyword searches combined via weighted fusion
-9. **Reranking** - Optional cross-encoder refinement (feature-flagged)
-10. **Answer Generation** - Synthesize response with proper citations
-11. **LLM Synthesis** - Call LLM to generate context-aware answer
-12. **Answer Evaluation** - Quality assessment across 4 dimensions
-13. **LLM Evaluation** - Call LLM to score answer quality (relevancy, accuracy, clarity, specificity)
-14. **Streaming Response** - Progressive results sent back to frontend
-
-### Event Flow & Data Volumes
-
-<div align="center">
-  <img src="docs/swimlane-diagram.png" alt="RAGnosis Event Flow" width="100%" />
-</div>
+### Flow:
+**1.** Data Collection - GitHub Actions scrapes docs, fetches HuggingFace/GitHub metrics<br/>
+**2.** Embedding Pipeline - Python processes content and generates vector embeddings<br/>
+**3.** User Query - Next.js frontend sends questions to Deno edge function<br/>
+**4-5.** Query Planning - LLM analyzes user intent and generates doc_type routing weights<br/>
+**6-7.** Query Expansion - LLM creates semantic variations (optional, disabled by default)<br/>
+**8.** Hybrid Search & RRF Merge - Parallel vector and keyword searches combined via weighted fusion<br/>
+**9.** Reranking - Optional cross-encoder refinement (feature-flagged)<br/>
+**10-11.** Answer Generation - LLM synthesizes context-aware response with citations<br/>
+**12-13.** Answer Evaluation - LLM scores quality (relevancy, accuracy, clarity, specificity)<br/>
+**14.** Streaming Response - Progressive results sent back to frontend
 
 ---
 
@@ -70,20 +62,80 @@ A production RAG system that answers questions about RAG technology itself—com
 
 ---
 
-## Tech Stack
+## Event Flow & Data Volumes
 
-| Layer | Technology | Why This Choice |
-|-------|-----------|-----------------|
-| **Frontend** | Next.js + assistant-ui | Streaming UI with thought process visibility, analytics dashboard, source attribution |
-| **Backend** | Deno (Supabase Edge Functions) | Fast cold starts, TypeScript-native, simple deployment |
-| **Database** | PostgreSQL + pgvector | Hybrid search in one DB, no separate vector store needed |
-| **Vector Search** | pgvector HNSW (cosine) | Graph-based index, consistent performance, no tuning needed |
-| **Keyword Search** | PostgreSQL GIN + ts_rank | Native full-text search, combines with vector via CTEs |
-| **LLM** | Ollama qwen2.5:3b / OpenRouter | Query planning & synthesis, auto-detects based on API key |
-| **Embeddings** | Supabase AI (gte-small) | 384-dim, quality/speed balance, serverless |
-| **Fusion** | Reciprocal Rank Fusion (RRF) | Merges vector + keyword results with configurable weights |
-| **Reranking** | Optional Cross-Encoder | Feature-flagged semantic reranking using gte-small |
-| **Data Pipeline** | Python 3.13 + GitHub Actions | Flexible scraping, automated scheduling |
+<div align="center">
+  <img src="docs/swimlane-diagram.png" alt="RAGnosis Event Flow" width="85%" />
+</div>
+
+---
+
+## Tech Stack & Tools
+
+### Core Technologies
+
+| Category | Tools | Purpose |
+|----------|-------|---------|
+| **Languages** | TypeScript, Python 3.13, SQL | Frontend/backend (TS), data pipeline (Python), database (SQL) |
+| **Frontend** | Next.js 16, React 19 | Web application framework |
+| | assistant-ui, Radix UI, Tailwind CSS 3 | Chat interface, components, styling |
+| | Recharts, React Markdown, Lucide React | Analytics charts, markdown rendering, icons |
+| **Backend** | Deno, Supabase Edge Functions | Serverless TypeScript runtime with fast cold starts |
+| **Database** | PostgreSQL, pgvector, Supabase | Vector + relational data in single DB |
+| **Vector Search** | pgvector (HNSW, cosine) | Graph-based vector index, no tuning needed |
+| **Keyword Search** | PostgreSQL (GIN + ts_rank) | Native full-text search |
+| **Search Fusion** | Reciprocal Rank Fusion (RRF) | Merges vector + keyword with configurable weights |
+| **Reranking** | Cross-Encoder (optional) | Feature-flagged semantic reranking |
+
+### AI & ML Stack
+
+| Component | Tools | Details |
+|-----------|-------|---------|
+| **LLM (Local)** | Ollama, qwen2.5:3b-instruct | Query planning & answer synthesis |
+| **LLM (Cloud)** | OpenRouter API | Alternative to local (auto-detects by API key) |
+| **Embeddings** | Supabase AI (gte-small) | 384-dim vectors, quality/speed balance |
+| | sentence-transformers | Python embedding library |
+| **Evaluation** | RAGAS, LangChain, fastembed | Automated quality metrics (faithfulness, relevancy) |
+
+### Data Pipeline
+
+| Component | Tools | Purpose |
+|-----------|-------|---------|
+| **Language** | Python 3.13 | Data processing & embeddings |
+| **Automation** | GitHub Actions | Scheduled scraping & updates |
+| **Web Scraping** | BeautifulSoup4, Feedparser, requests | Doc collection, RSS parsing |
+| **APIs** | HuggingFace Hub, GitHub API, PyTrends | Model metrics, repo data, trends |
+| **Visualization** | Streamlit, Plotly | Data pipeline UI & interactive charts |
+
+### Development Tools
+
+| Tool | Purpose |
+|------|---------|
+| Docker & Docker Compose | Containerization (Ollama, Supabase) |
+| Make | Task automation (setup, pipeline, deploy) |
+| ESLint, TypeScript | Code quality & type safety |
+| python-dotenv | Environment configuration |
+| Git & GitHub | Version control & CI/CD |
+
+
+---
+
+## Evaluation & Quality Assurance
+
+The system includes a comprehensive evaluation framework with **28 curated test questions** across 6 categories (concepts, models, repos, comparisons, implementation, troubleshooting).
+
+**Key Metrics:**
+- **Faithfulness (0.90)** - Answers grounded in sources, minimal hallucination
+- **Answer Relevancy (0.55)** - How directly answers address the question
+- **Entity Accuracy** - Correct entities mentioned in responses
+
+Uses **RAGAS** (Retrieval Augmented Generation Assessment) framework with Ollama for automated quality scoring. Each code change can be validated against the golden dataset to prevent regressions.
+
+**Run evaluation:** `cd evaluation && python evaluate_ragnosis.py` (~2 min for full suite)
+
+See [`evaluation/README.md`](evaluation/README.md) for detailed metrics and tuning guidance.
+
+---
 
 ## Quick Start
 
