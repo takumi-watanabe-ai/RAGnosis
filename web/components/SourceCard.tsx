@@ -6,6 +6,7 @@ import {
   getSourceDisplayTitle,
   getDocTypeBadgeColor,
 } from "@/lib/citation-utils";
+import { SourceDomainIcon } from "./SourceIcons";
 
 interface SourceCardProps {
   source: SearchResult;
@@ -53,9 +54,10 @@ export function SourceCard({
                   href={source.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded transition-opacity hover:opacity-70 ${badgeColor}`}
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium rounded transition-opacity hover:opacity-70 ${badgeColor}`}
                   title={`Visit ${domain}`}
                 >
+                  <SourceDomainIcon url={source.url} size="sm" />
                   {domain}
                 </a>
               )}

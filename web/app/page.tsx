@@ -94,9 +94,8 @@ export default function Home() {
       {/* Hero Section with Logo */}
       <main className="relative px-6 sm:px-12">
         <div
-          className={`py-16 sm:py-24 md:pb-16 md:pt-32 text-center transition-all duration-1000 ${
-            showHero ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
+          className={`py-16 sm:py-24 md:pb-16 md:pt-32 text-center transition-all duration-1000 ${showHero ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+            }`}
         >
           {/* Logo/Icon */}
           <div className="flex justify-center mb-8 sm:mb-12">
@@ -117,7 +116,7 @@ export default function Home() {
 
           {/* Description */}
           <p className="text-base sm:text-lg md:text-xl text-charcoal mb-10 sm:mb-12 leading-relaxed max-w-2xl mx-auto font-light">
-            Diagnose your RAG
+            Diagnose your Retrieval-Augmented Generation
           </p>
 
           {/* CTA */}
@@ -131,11 +130,10 @@ export default function Home() {
 
         {/* Quick Examples */}
         <div
-          className={`py-12 sm:py-16 border-t border-stone-border transition-all duration-700 ${
-            showQuestions
+          className={`py-12 sm:py-16 border-t border-stone-border transition-all duration-700 ${showQuestions
               ? "opacity-100 translate-y-0"
               : "opacity-0 translate-y-12"
-          }`}
+            }`}
         >
           <h2 className="text-sm sm:text-base font-normal text-center mb-8 sm:mb-10 text-charcoal uppercase tracking-[0.15em]">
             Example Questions
@@ -154,11 +152,10 @@ export default function Home() {
         {!loading && trendsData.length > 0 && (
           <div
             ref={trendsRef}
-            className={`py-12 sm:py-16 border-t border-stone-border transition-all duration-700 ${
-              trendsVisible
+            className={`py-12 sm:py-16 border-t border-stone-border transition-all duration-700 ${trendsVisible
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-12"
-            }`}
+              }`}
           >
             <div className="mb-8">
               <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-charcoal mb-2 uppercase">
@@ -176,11 +173,10 @@ export default function Home() {
         {!loading && tasks.length > 0 && topics.length > 0 && (
           <div
             ref={positionRef}
-            className={`py-12 sm:py-16 border-t border-stone-border transition-all duration-700 ${
-              positionVisible
+            className={`py-12 sm:py-16 border-t border-stone-border transition-all duration-700 ${positionVisible
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-12"
-            }`}
+              }`}
           >
             <div className="mb-8">
               <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-charcoal mb-2 uppercase">

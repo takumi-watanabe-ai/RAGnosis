@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Header } from "@/components/Header";
 import {
   getLanguageTopicMatrix,
@@ -200,6 +201,46 @@ export default function MarketAnalyticsPage() {
           </Section>
         </div>
       </main>
+
+      {/* Footer */}
+      <footer className="relative border-t border-stone-border bg-cream">
+        <div className="px-6 sm:px-12 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6 sm:gap-8">
+              <Link
+                href="/"
+                className="text-xs uppercase tracking-wider text-charcoal hover:opacity-60 transition-opacity"
+              >
+                Home
+              </Link>
+              <Link
+                href="/chat"
+                className="text-xs uppercase tracking-wider text-charcoal hover:opacity-60 transition-opacity"
+              >
+                Chat
+              </Link>
+            </div>
+            <div className="flex items-center gap-6 sm:gap-8">
+              <a
+                href="https://github.com/takumi-watanabe-ai/RAGnosis"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs uppercase tracking-wider text-charcoal hover:opacity-60 transition-opacity"
+              >
+                GitHub
+              </a>
+              <a
+                href="https://www.linkedin.com/in/takumi-watanabe/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs uppercase tracking-wider text-charcoal hover:opacity-60 transition-opacity"
+              >
+                LinkedIn
+              </a>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

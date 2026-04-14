@@ -19,6 +19,7 @@ import { SourceCard } from "./SourceCard";
 import { ProgressSteps } from "./ProgressSteps";
 import type { SearchResult } from "@/lib/api";
 import { preprocessCitationMarkers } from "@/lib/citation-utils";
+import { SourceIcons } from "./SourceIcons";
 
 interface ProgressStep {
   step: string;
@@ -208,16 +209,16 @@ export const SimpleChatInterface = forwardRef<
             prev.map((msg) =>
               msg.id === assistantMessageId
                 ? {
-                    ...msg,
-                    progress: [
-                      ...(msg.progress || []),
-                      {
-                        step: event.step || "unknown",
-                        message: event.message || "",
-                        data: event.data,
-                      },
-                    ],
-                  }
+                  ...msg,
+                  progress: [
+                    ...(msg.progress || []),
+                    {
+                      step: event.step || "unknown",
+                      message: event.message || "",
+                      data: event.data,
+                    },
+                  ],
+                }
                 : msg,
             ),
           );
@@ -227,10 +228,10 @@ export const SimpleChatInterface = forwardRef<
             prev.map((msg) =>
               msg.id === assistantMessageId
                 ? {
-                    ...msg,
-                    sources: event.sources || [],
-                    metadata: event.metadata,
-                  }
+                  ...msg,
+                  sources: event.sources || [],
+                  metadata: event.metadata,
+                }
                 : msg,
             ),
           );
@@ -249,9 +250,9 @@ export const SimpleChatInterface = forwardRef<
             prev.map((msg) =>
               msg.id === assistantMessageId
                 ? {
-                    ...msg,
-                    content: `Error: ${event.message || "Unknown error"}`,
-                  }
+                  ...msg,
+                  content: `Error: ${event.message || "Unknown error"}`,
+                }
                 : msg,
             ),
           );
@@ -263,9 +264,9 @@ export const SimpleChatInterface = forwardRef<
         prev.map((msg) =>
           msg.id === assistantMessageId
             ? {
-                ...msg,
-                content: `Error: ${error instanceof Error ? error.message : "Failed to get response"}`,
-              }
+              ...msg,
+              content: `Error: ${error instanceof Error ? error.message : "Failed to get response"}`,
+            }
             : msg,
         ),
       );
@@ -328,7 +329,7 @@ export const SimpleChatInterface = forwardRef<
   // Most frequently asked questions - optimized for 90% of users
   const suggestedQuestions = [
     "What is RAG?",
-    "best embedding model",
+    "Best embedding model",
     "What are the most popular vector databases?",
     "When should I use RAG?",
   ];
@@ -341,7 +342,7 @@ export const SimpleChatInterface = forwardRef<
           {messages.length === 0 && (
             <div className="flex flex-col items-start justify-start pt-16 max-w-2xl">
               <h1 className="text-3xl sm:text-4xl font-light mb-4 text-charcoal leading-tight">
-                Diagnose your RAG
+                Diagnose your Retrieval-Augmented Generation
               </h1>
               <p className="text-lg sm:text-xl text-stone mb-6 leading-relaxed max-w-xl font-light">
                 Ask questions about RAG models, implementations, or trends.
@@ -602,11 +603,14 @@ export const SimpleChatInterface = forwardRef<
 
                           setExpandedSources(newExpanded);
                         }}
-                        className="text-xs text-stone hover:text-charcoal transition-colors uppercase tracking-wider font-normal"
+                        className="flex items-center gap-2 text-xs text-stone hover:text-charcoal transition-colors uppercase tracking-wider font-normal"
                       >
-                        {expandedSources.has(message.id)
-                          ? "Hide Sources"
-                          : `Sources (${message.sources.length})`}
+                        <span>
+                          {expandedSources.has(message.id)
+                            ? "Hide Sources"
+                            : `Sources (${message.sources.length})`}
+                        </span>
+                        <SourceIcons sources={message.sources} size="sm" />
                       </button>
                     )}
                   </div>
