@@ -15,7 +15,7 @@ export function Header({
   showMobileMenu = false,
 }: HeaderProps) {
   return (
-    <header className="border-b border-stone-border bg-cream">
+    <header className="sticky top-0 z-50 border-b border-stone-border bg-cream">
       <div className="px-6 sm:px-12 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4 sm:gap-4">
