@@ -1,5 +1,3 @@
-import { getSessionId } from "./session";
-
 export interface SearchResult {
   position: number;
   name: string;
@@ -67,7 +65,6 @@ export async function sendChatMessage(query: string): Promise<ChatResponse> {
     "Content-Type": "application/json",
     Authorization: `Bearer ${anonKey}`,
     apikey: anonKey,
-    "x-session-id": getSessionId(),
   };
 
   const response = await fetch(edgeFunctionUrl, {
@@ -106,7 +103,6 @@ export async function* sendChatMessageStream(
     "Content-Type": "application/json",
     Authorization: `Bearer ${anonKey}`,
     apikey: anonKey,
-    "x-session-id": getSessionId(),
   };
 
   const response = await fetch(edgeFunctionUrl, {
